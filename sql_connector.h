@@ -85,18 +85,6 @@ int sqlc_delete(sqlc_descriptor*d);
 int sqlc_get_state(sqlc_descriptor*d,enum state* state);
 int sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es);
 int sqlc_is_connected(sqlc_descriptor*d, char* connected);
-/*
- * Prototype of an http client callback function
- *
- * @param arg argument specified when initiating the email
- * @param http_result result of the mail transfer (see defines SMTP_RESULT_*)
- * @param srv_err if aborted by the server, this contains the error code received
- * @param err an error returned by internal lwip functions, can help to specify
- *            the source of the error but must not necessarily be != ERR_OK
- */
-typedef void (*httpc_result_fn)(void *arg, u8_t http_result);//, err_t err);
-
-err_t sql_connector_connect_static(const char* address,unsigned int port, const char* username,const char* password);
 
 
 

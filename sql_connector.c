@@ -41,24 +41,13 @@
 #include "sql_connector.h"
 #include <string.h>
 
-/* HTTP methods Strings*/
-#define GET_METHOD "GET"
-#define POST_METHOD "POST"
-
-const char* get_str = GET_METHOD;
-const char* post_str = POST_METHOD;
-
 
 #define SQLC_POLL_INTERVAL 4   //  4 * 0.5 SEC.
-#define SQLC_TIMEOUT 5// * 60 * (sqlc_poll_INTERVAL / 2) // two minutes.
+#define SQLC_TIMEOUT 10// * 60 * (sqlc_poll_INTERVAL / 2) // two minutes.
 
-/** Maximum length reserved for server name */
-#ifndef SQLC_MAX_SERVERNAME_LEN
-#define SQLC_MAX_SERVERNAME_LEN 256
-#endif
 #define HTTP_MAX_REQUEST_LENGTH 1024
 #ifndef SQLC_DEFAULT_PORT
-#define SQLC_DEFAULT_PORT 80
+#define SQLC_DEFAULT_PORT 3306
 #endif
 #ifdef SQLC_DEBUG
 #undef SQLCC_DEBUG
@@ -71,6 +60,30 @@ enum sqlc_session_state{
 	SQLC_RECV,
 	SQLC_SENT,
 	SQLC_CLOSED
+};
+#define HASH_LENGTH 20
+#define BLOCK_LENGTH 64
+
+#define MYSQL_SHA1_K0 0x5a827999
+#define MYSQL_SHA1_K20 0x6ed9eba1
+#define MYSQL_SHA1_K40 0x8f1bbcdc
+#define MYSQL_SHA1_K60 0xca62c1d6
+
+union _sha1_buffer {
+  uint8_t b[BLOCK_LENGTH];
+  uint32_t w[BLOCK_LENGTH/4];
+};
+union _sha1_state {
+  uint8_t b[HASH_LENGTH];
+  uint32_t w[HASH_LENGTH/4];
+};
+
+const uint8_t sha1InitState[] = {
+  0x01,0x23,0x45,0x67, // H0
+  0x89,0xab,0xcd,0xef, // H1
+  0xfe,0xdc,0xba,0x98, // H2
+  0x76,0x54,0x32,0x10, // H3
+  0xf0,0xe1,0xd2,0xc3  // H4
 };
 struct sql_connector{
 	char connected;
@@ -94,12 +107,136 @@ struct sql_connector{
     /** amount of data from body already sent */
     u16_t payload_sent;
     char* server_version;
+
+    union _sha1_buffer sha1_buffer;
+    uint8_t bufferOffset;
+    union _sha1_state sha1_state;
+    uint32_t byteCount;
+    uint8_t keyBuffer[BLOCK_LENGTH];
+    uint8_t innerHash[HASH_LENGTH];
+    char seed[20];
 };
 struct sql_cd{
 	sqlc_descriptor* sqlc_d;
 	struct sql_connector* sqlc;
 };
 static struct sql_cd sqlcd_array[MAX_SQL_CONNECTORS];
+
+err_t sqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len);
+void sqlc_err(void *arg, err_t err);
+err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err);
+err_t sqlc_poll(void *arg, struct tcp_pcb *pcb);
+err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *pbuf, err_t err);
+static void sqlc_cleanup(struct sql_connector *s);
+static int
+sqlc_close(struct sql_connector *s);
+
+void Encrypt_SHA1_init(struct sql_connector* s) {
+  memcpy(s->sha1_state.b,sha1InitState,HASH_LENGTH);
+  s->byteCount = 0;
+  s->bufferOffset = 0;
+}
+uint32_t Encrypt_SHA1_rol32(uint32_t number, uint8_t bits) {
+  return ((number << bits) | (number >> (32-bits)));
+}
+void Encrypt_SHA1_hashBlock(struct sql_connector* s) {
+  // SHA1 only for now
+  uint8_t i;
+  uint32_t a,b,c,d,e,t;
+
+  a=s->sha1_state.w[0];
+  b=s->sha1_state.w[1];
+  c=s->sha1_state.w[2];
+  d=s->sha1_state.w[3];
+  e=s->sha1_state.w[4];
+  for (i=0; i<80; i++) {
+    if (i>=16) {
+      t = s->sha1_buffer.w[(i+13)&15] ^ s->sha1_buffer.w[(i+8)&15] ^ s->sha1_buffer.w[(i+2)&15] ^ s->sha1_buffer.w[i&15];
+      s->sha1_buffer.w[i&15] = Encrypt_SHA1_rol32(t,1);
+    }
+    if (i<20) {
+      t = (d ^ (b & (c ^ d))) + MYSQL_SHA1_K0;
+    } else if (i<40) {
+      t = (b ^ c ^ d) + MYSQL_SHA1_K20;
+    } else if (i<60) {
+      t = ((b & c) | (d & (b | c))) + MYSQL_SHA1_K40;
+    } else {
+      t = (b ^ c ^ d) + MYSQL_SHA1_K60;
+    }
+    t+=Encrypt_SHA1_rol32(a,5) + e + s->sha1_buffer.w[i&15];
+    e=d;
+    d=c;
+    c=Encrypt_SHA1_rol32(b,30);
+    b=a;
+    a=t;
+  }
+  s->sha1_state.w[0] += a;
+  s->sha1_state.w[1] += b;
+  s->sha1_state.w[2] += c;
+  s->sha1_state.w[3] += d;
+  s->sha1_state.w[4] += e;
+}
+void Encrypt_SHA1_addUncounted(struct sql_connector* s,uint8_t data) {
+  s->sha1_buffer.b[s->bufferOffset ^ 3] = data;
+  s->bufferOffset++;
+  if (s->bufferOffset == BLOCK_LENGTH) {
+	Encrypt_SHA1_hashBlock(s);
+    s->bufferOffset = 0;
+  }
+}
+void Encrypt_SHA1_write(struct sql_connector* s,uint8_t data) {
+  ++s->byteCount;
+  Encrypt_SHA1_addUncounted(s,data);
+}
+
+void Encrypt_SHA1_write_arr(struct sql_connector* s,const uint8_t* data, int length) {
+  for (int i=0; i<length; i++) {
+	  Encrypt_SHA1_write(s,data[i]);
+  }
+}
+void Encrypt_SHA1_print(struct sql_connector* s,const uint8_t* data){
+	int length = strlen(data);
+	Encrypt_SHA1_write_arr(s,data,length);
+}
+void Encrypt_SHA1_pad(struct sql_connector* s) {
+  // Implement SHA-1 padding (fips180-2 ยง5.1.1)
+
+  // Pad with 0x80 followed by 0x00 until the end of the block
+  Encrypt_SHA1_addUncounted(s,0x80);
+  while (s->bufferOffset != 56) Encrypt_SHA1_addUncounted(s,0x00);
+
+  // Append length in the last 8 bytes
+  Encrypt_SHA1_addUncounted(s,0); // We're only using 32 bit lengths
+  Encrypt_SHA1_addUncounted(s,0); // But SHA-1 supports 64 bit lengths
+  Encrypt_SHA1_addUncounted(s,0); // So zero pad the top bits
+  Encrypt_SHA1_addUncounted(s,s->byteCount >> 29); // Shifting to multiply by 8
+  Encrypt_SHA1_addUncounted(s,s->byteCount >> 21); // as SHA-1 supports bitstreams as well as
+  Encrypt_SHA1_addUncounted(s,s->byteCount >> 13); // byte.
+  Encrypt_SHA1_addUncounted(s,s->byteCount >> 5);
+  Encrypt_SHA1_addUncounted(s,s->byteCount << 3);
+}
+
+uint8_t* Encrypt_SHA1_result(struct sql_connector* s) {
+  // Pad to complete the last block
+	Encrypt_SHA1_pad(s);
+
+  // Swap byte order back
+  for (int i=0; i<5; i++) {
+    uint32_t a,b;
+    a=s->sha1_state.w[i];
+    b=a<<24;
+    b|=(a<<8) & 0x00ff0000;
+    b|=(a>>8) & 0x0000ff00;
+    b|=a>>24;
+    s->sha1_state.w[i]=b;
+  }
+
+  // Return pointer to hash (20 characters)
+  return s->sha1_state.b;
+}
+
+#define HMAC_IPAD 0x36
+#define HMAC_OPAD 0x5c
 
 int sqlc_create( sqlc_descriptor* d ){
 	int i = 0 ;
@@ -281,12 +418,6 @@ int sqlc_is_connected(sqlc_descriptor*d, char* connected)
 	return 0 ;
 }
 
-err_t sqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len);
-void sqlc_err(void *arg, err_t err);
-err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err);
-err_t sqlc_poll(void *arg, struct tcp_pcb *pcb);
-err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *pbuf, err_t err);
-static void sqlc_cleanup(struct sql_connector *s);
 
 err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err)
  {
@@ -341,7 +472,7 @@ err_t sqlc_poll(void *arg, struct tcp_pcb *pcb)
 		// TODO handle other events..
 	}
 	else{
-		LWIP_DEBUGF(HTTPC_DEBUG, ("sqlc_poll: something wrong\n\r"));
+		LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_poll: something wrong\n\r"));
 	}
  return ret_code;
  }
@@ -364,9 +495,9 @@ sqlc_cleanup(struct sql_connector *s)
 
 /** Try to close a pcb and free the arg if successful */
 static int
-sqlc_close(struct sql_connector *s)//, err_t err)
+sqlc_close(struct sql_connector *s)
 {
-	LWIP_DEBUGF(HTTPC_DEBUG, ("sqlc_close()\r\n"));
+	LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_close()\r\n"));
 	tcp_arg(s->pcb, NULL);
 	tcp_poll(s->pcb,NULL,0);  // may be wrong ?
 	tcp_sent(s->pcb, NULL);
@@ -383,48 +514,109 @@ sqlc_close(struct sql_connector *s)//, err_t err)
 	return 1;
 }
 
-char seed[20];
 
-void parse_handshake_packet(struct sql_connector s,struct pbuf *p)
+
+void parse_handshake_packet(struct sql_connector* s,struct pbuf *p)
 {
-	int len = strlen(p->payload[5]);
-	s->server_version = mem_malloc(len);
+	int len = strlen(&(((char*)p->payload)[5]));
+	s->server_version = (char*)mem_malloc(len + 1);
 	if(s->server_version)
-		strcpy(s->server_version,p->payload[5]);
-	int seed_index = len + 6 ;
+		strcpy(s->server_version,&(((char*)p->payload)[5]));
+	int seed_index = len + 6  + 4;
 	for(int i = 0 ; i < 8 ; i++)
-		seed[i] = p->payload[seed_index + i ];
+		s->seed[i] = ((char*)p->payload)[seed_index + i ];
 	seed_index += 27 ;
 	for(int i = 0 ; i < 12 ; i++)
 	{
-		seed[i + 8] = p->payload[seed_index + i ];
+		s->seed[i + 8] = ((char*)p->payload)[seed_index + i ];
 	}
 }
-err_t sqlc_send(struct tcp_pcb *pcb,char* payload){
+err_t sqlc_send(struct tcp_pcb *pcb,struct sql_connector* s){
 	int len ;
-	err_t ret_code = ERR_OK,err;
-	len=strlen(payload);
+	err_t ret_code = ERR_OK,err = ERR_OK;
+	len=s->payload_len - s->payload_sent;
 	if(len > tcp_sndbuf(pcb)){
-		LWIP_DEBUGF(HTTPC_DEBUG,("httpc_send_request: request length is Larger than max amount%d\n\r",err));
+		LWIP_DEBUGF(SQLC_DEBUG,("sqlc_send: request length is Larger than max amount%d\n\r",err));
 		len = tcp_sndbuf(pcb);
 	}
-	LWIP_DEBUGF(HTTPC_DEBUG, ("httpc_send_request: TCP write: %d\r\n",len));
-	err =  tcp_write(pcb, payload, len, 1);
+	LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_send: TCP write: %d\r\n",len));
+	err =  tcp_write(pcb, s->payload, len, 1);
 	if (err != ERR_OK) {
-		LWIP_DEBUGF(HTTPC_DEBUG,("httpc_send_request: error writing! %d\n\r",err));
+		LWIP_DEBUGF(SQLC_DEBUG,("sqlc_send: error writing! %d\n\r",err));
 		ret_code = err ;
 		return ret_code;
 	}
 	tcp_sent(pcb, sqlc_sent);
 	return ret_code;
 }
-char scramble_password(char* password , char* scramble)
+char scramble_password(struct sql_connector* s,const char* password , char* pwd_hash)
 {
+	char *digest;
+	char hash1[20];
+	char hash2[20];
+	char hash3[20];
+	char pwd_buffer[40];
 
+	  if (strlen(password) == 0)
+	    return 0;
 
-		return 1;
+	  // hash1
+	  Encrypt_SHA1_init(s);
+	  Encrypt_SHA1_print(s,password);
+	  digest = Encrypt_SHA1_result(s);
+	  memcpy(hash1, digest, 20);
+
+	  // hash2
+	  Encrypt_SHA1_init(s);
+	  Encrypt_SHA1_write_arr(s,hash1, 20);
+	  digest = Encrypt_SHA1_result(s);
+	  memcpy(hash2, digest, 20);
+
+	  // hash3 of seed + hash2
+	  Encrypt_SHA1_init(s);
+	  memcpy(pwd_buffer, &s->seed, 20);
+	  memcpy(pwd_buffer+20, hash2, 20);
+	  Encrypt_SHA1_write_arr(s,pwd_buffer, 40);
+	  digest = Encrypt_SHA1_result(s);
+	  memcpy(hash3, digest, 20);
+
+	  // XOR for hash4
+	  for (int i = 0; i < 20; i++)
+	    pwd_hash[i] = hash1[i] ^ hash3[i];
+
+	  return 1;
 }
-err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb, char *user, char *password)
+/*
+  store_int - Store an integer value into a byte array of size bytes.
+
+  This writes an integer into the buffer at the current position of the
+  buffer. It will transform an integer of size to a length coded binary
+  form where 1-3 bytes are used to store the value (set by size).
+
+  buff[in]        pointer to location in internal buffer where the
+                  integer will be stored
+  value[in]       integer value to be stored
+  size[in]        number of bytes to use to store the integer
+*/
+void store_int(char *buff, long value, int size) {
+  memset(buff, 0, size);
+  if (value < 0xff)
+    buff[0] = (char)value;
+  else if (value < 0xffff) {
+    buff[0] = (char)value;
+    buff[1] = (char)(value >> 8);
+  } else if (value < 0xffffff) {
+    buff[0] = (char)value;
+    buff[1] = (char)(value >> 8);
+    buff[2] = (char)(value >> 16);
+  } else if (value < 0xffffff) {
+    buff[0] = (char)value;
+    buff[1] = (char)(value >> 8);
+    buff[2] = (char)(value >> 16);
+    buff[3] = (char)(value >> 24);
+  }
+}
+err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb,const char *user,const char *password)
 {
 	s->payload = (char*) mem_malloc(256);
 	if(s){
@@ -458,7 +650,7 @@ err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb, 
 
 	  // password - see scramble password
 	   char scramble[20];
-	   if (scramble_password(password, scramble)) {
+	   if (scramble_password(s,password, scramble)) {
 	     s->payload[size_send] = 0x14;
 	     size_send += 1;
 	     for (int i = 0; i < 20; i++)
@@ -478,7 +670,7 @@ err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb, 
 	   int p_size = size_send - 4;
 	   store_int(&s->payload[0], p_size, 3);
 	   s->payload[3] = 0x01;
-	   err = sqlc_send(pcb, s->payload);
+	   err = sqlc_send(pcb, s);
 	   return err;
 	}
 	return ERR_MEM;
@@ -523,7 +715,7 @@ int read_int(char* buffer,int offset, int size) {
   int value = 0;
   int new_size = 0;
   if (size == 0)
-     new_size = get_lcb_len(offset);
+     new_size = get_lcb_len(buffer,offset);
   if (size == 1)
      return buffer[offset];
   new_size = size;
@@ -589,14 +781,14 @@ err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 		 }
 		 if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == SQLC_CONNECTED){
 			 if(p->tot_len > 4){
-				 unsigned long packet_length = p->payload[0];
-				 packet_length += p->payload[1]<<8;
-				 packet_length += p->payload[2]<<16;
+				 unsigned long packet_length = ((char*)p->payload)[0];
+				 packet_length += ((char*)p->payload)[1]<<8;
+				 packet_length += ((char*)p->payload)[2]<<16;
 				 if(p->tot_len >= packet_length + 4){
 					 parse_handshake_packet(s,p);
 					 tcp_recved(pcb, p->tot_len);
 				     pbuf_free(p);
-				     err_t err = send_authentication_packet(pcb,s->username,s->password);
+				     err_t err = send_authentication_packet(s,pcb,(const char*)s->username,(const char*)s->password);
 				     if(err != ERR_OK){
 				    	 s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
 				    	 s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
@@ -608,26 +800,27 @@ err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 			 }
 		 }else if (s->connector_state == CONNECTOR_STATE_CONNECTING && (s->state == SQLC_RECV || s->state == SQLC_SENT)){
 			 if(p->tot_len > 4){
-				 unsigned long packet_length = p->payload[0];
-				 packet_length += p->payload[1]<<8;
-				 packet_length += p->payload[2]<<16;
+				 unsigned long packet_length = ((char*)p->payload)[0];
+				 packet_length += ((char*)p->payload)[1]<<8;
+				 packet_length += ((char*)p->payload)[2]<<16;
 				 if(p->tot_len >= packet_length + 4){
-					    if (check_ok_packet(p->payload) != 0) {
-					      parse_error_packet(p->payload,p->tot_len);
+					    if (check_ok_packet((char*)p->payload) != 0) {
+					      parse_error_packet((char*)p->payload,p->tot_len);
 					      // return false; meaning tell the user we don't have the connection , further close it...
 					      s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
 						  s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
 						  sqlc_close(s);
+					    }else{
+							LWIP_DEBUGF(SQLC_DEBUG, ("Connected to server version %s\n\r",s->server_version));
+							mem_free(s->server_version);
+							s->server_version = NULL;
+
+
+							// Tell the application the Good news ?
+							s->connected = 1 ; // TODO handle error , sent , poll events.. if connected
+							s->connector_state = CONNECTOR_STATE_IDLE;
+							s->es = CONNECTOR_ERROR_OK;
 					    }
-					    LWIP_DEBUGF(SQLC_DEBUG, ("Connected to server version %s\n\r",s->server_version));
-					    mem_free(s->server_version);
-					    s->server_version = NULL;
-
-
-					    // Tell the application the Good news ?
-					    s->connected = 1 ; // TODO handle error , sent , poll events.. if connected
-					    s->connector_state = CONNECTOR_STATE_IDLE;
-					    s->es = CONNECTOR_ERROR_OK;
 				 }
 			 }
 		 }
@@ -658,7 +851,7 @@ err_t sqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
     s->payload_sent +=len;
     if(s->payload && s->payload_len - s->payload_sent)
     {
-    	sqlc_send(pcb,&s->payload[s->payload_sent]);
+    	sqlc_send(pcb,s);
     }
     else if (s->payload && !(s->payload_len - s->payload_sent))
     {

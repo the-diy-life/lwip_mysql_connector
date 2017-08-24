@@ -33,6 +33,7 @@
 #include "lwip/stats.h"
 
 #include "arch/perf.h"
+#include "arch/cc.h"
 #include "lwip/snmp.h"
 
 #include "lwip/api.h"
@@ -65,7 +66,7 @@ const char* post_str = POST_METHOD;
 #define SQLC_DEBUG         LWIP_DBG_ON
 
 enum sqlc_session_state{
-	SQLC_NEW,
+	SQLC_NEW = 0,
 	SQLC_CONNECTED,
 	SQLC_RECV,
 	SQLC_SENT,
@@ -83,10 +84,16 @@ struct sql_connector{
 	int port;
 	ip_addr_t remote_ipaddr;
 	  /** timeout handling, if this reaches 0, the connection is closed */
-    unsigned int  timer;
+    u16_t  timer;
     struct tcp_pcb *pcb;
     struct pbuf* p;
-
+    /** this is the body of the payload to be sent */
+    char* payload;
+    /** this is the length of the body to be sent */
+    u16_t payload_len;
+    /** amount of data from body already sent */
+    u16_t payload_sent;
+    char* server_version;
 };
 struct sql_cd{
 	sqlc_descriptor* sqlc_d;
@@ -159,7 +166,7 @@ leave:
   return err;
 }
 /*
- * hostname  username , password , need to be permenant in memor as long as we
+ * hostname  username , password , need to be permenant in memory as long as we
  * have the connector..
  *
  *
@@ -274,185 +281,12 @@ int sqlc_is_connected(sqlc_descriptor*d, char* connected)
 	return 0 ;
 }
 
-//#endif
-
-/** struct keeping the body and state of an HTTP Client session */
-struct sqlc_session {
-  /** keeping the state of the HTTP Client session */
-  enum sqlc_session_state state;
-  /** timeout handling, if this reaches 0, the connection is closed */
-  u16_t timer;
-  struct tcp_pcb *pcb;
-  struct pbuf* p;
-
-  /** target website */
-//	struct ip_addr remote_ipaddr;
-	ip_addr_t remote_ipaddr;
-	/**  requested URL   */
-  const char* requestedURL;
-  /** size of the requested URL */
-  u16_t requestedURL_len;
-  /** this is the body of the request to be sent */
-  char* request;
-  /** this is the length of the body to be sent */
-  u16_t request_len;
-  /** amount of data from body already sent */
-  u16_t request_sent;
-	/** callback function to call when closed */
-  httpc_result_fn callback_fn;
-  /** argument for callback function */
-  void *callback_arg;
-	/**user stack pointer for storage*/
-  struct user_stack* user_stack;
-};
-/** IP address or DNS name of the server to use for next HTTP request */
-static char sqlc_server[SQLC_MAX_SERVERNAME_LEN + 1];
-/** TCP port of the server to use for next HTTP request */
-static u16_t sqlc_server_port = SQLC_DEFAULT_PORT;
-
-static void
-httpc_close(struct httpc_session *s,u8_t result);//, err_t err);
-err_t httpc_sent(void *arg, struct tcp_pcb *pcb, u16_t len);
+err_t sqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len);
 void sqlc_err(void *arg, err_t err);
 err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err);
 err_t sqlc_poll(void *arg, struct tcp_pcb *pcb);
 err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *pbuf, err_t err);
 static void sqlc_cleanup(struct sql_connector *s);
-
-err_t httpc_send_request(struct tcp_pcb *pcb,char* request);
-static void
-httpc_free(struct httpc_session *s,u8_t result);//, err_t err);
-
-#if LWIP_DNS
-/** DNS callback
- * If ipaddr is non-NULL, resolving succeeded, otherwise it failed.
- */
-static void
-httpc_dns_found(const char* hostname,const ip_addr_t *ipaddr, void *arg)
-{
-	struct httpc_session *s = arg;
-	struct tcp_pcb *pcb = s->pcb;
-  err_t err;
-  u8_t result;
-
-  LWIP_UNUSED_ARG(hostname);
-	LWIP_DEBUGF(HTTPC_DEBUG, ("httpc_dns_found\r\n"));
-  if (ipaddr != NULL) {
-    LWIP_DEBUGF(HTTPC_DEBUG, ("httpc_dns_found: hostname resolved, connecting\n"));
-    err = tcp_connect(pcb, ipaddr, http_server_port, sqlc_connected);
-    if (err == ERR_OK) {
-      return;
-    }
-    LWIP_DEBUGF(HTTPC_DEBUG, ("tcp_connect failed: %d\n\r", (int)err));
-		result = HTTPC_TCP_MEM_ERR;
-  } else {
-    LWIP_DEBUGF(HTTPC_DEBUG, ("HTTP_dns_found: failed to resolve hostname: %s\r\n",
-      hostname));
-		result = HTTPC_RESULT_ERR_HOSTNAME;
-    //err = ERR_ARG;
-  }
-  httpc_close(pcb->callback_arg,result);//,err);
-}
-#endif
-/** Set IP address or DNS name for next HTTP connection
- *
- * @param server IP address (in ASCII representation) or DNS name of the server
- */
-void
-httpc_set_server_addr(const char* server)
-{
-  size_t len = 0;
-  if (server != NULL) {
-    len = strlen(server);
-  }
-  if (len > HTTP_MAX_SERVERNAME_LEN) {
-    len = HTTP_MAX_SERVERNAME_LEN;
-  }
-  memcpy(http_server, server, len);
-}
-
-
-
-/*
- * Comment of the SMTP client.
- * Same as SMTP_send_mail, but doesn't copy from, to, subject and body into
- * an internal buffer to save memory.
- * WARNING: the above data must stay untouched until the callback function is
- *          called (unless the function returns != ERR_OK)
- */
-err_t sql_connector_connect_static(const char* address,
-		unsigned int port, const char* username,const char* password)
-{
-  struct sqlc_session* s;
-  size_t len;
-	const char* method_ptr ;
-  s = mem_malloc(sizeof(struct sqlc_session));
-  if (s == NULL) {
-	LWIP_DEBUGF(HTTPC_DEBUG,("httpc_sendrequest_static():cannot allocate memory for the state structure , try again later ? \n\r"));
-    return ERR_MEM;
-  }
-  memset(s, 0, sizeof(struct sqlc_session));
-  /* initialize the structure */
-  s->requestedURL = requestedURL;
-  s->callback_fn = callback_fn;
-  s->callback_arg = callback_arg;
-  s->user_stack = user_stack;
-  s->user_stack->top = 0;
-  len = strlen(requestedURL);
-  LWIP_ASSERT("string is too long", len <= 0xffff);
-  s->requestedURL_len = (u16_t)len;
-  httpc_set_server_addr(host);
-	s->request = (char*)mem_malloc(HTTP_MAX_REQUST_LENGTH);
-	if(s->request == NULL){
-		LWIP_DEBUGF(HTTPC_DEBUG,("httpc_sendrequest_static():cannot allocate memory for the request \n\r"));
-		mem_free(s);
-		//httpc_free(s,HTTPC_RESULT_ERR_UNKNOWN,ERR_MEM);
-		return ERR_MEM;
-	}
-	memset(s->request,0,HTTP_MAX_REQUST_LENGTH);
-	if(method == GET)
-		method_ptr = get_str;
-	else if (method == POST)
-		method_ptr = post_str;
-	sprintf(s->request,"%s %s HTTP/1.1\r\n"\
-	"Host: %s:%d\r\n"\
-	,method_ptr,s->requestedURL,http_server,http_server_port);
-	if(auth)
-	{
-		char buff[512];
-		memset(buff,0,sizeof(buff));
-		sprintf(buff,"Authorization: %s\r\nCache-Control: no-cache\r\nConnection: Close\r\n",auth_msg);
-		strcat(s->request,buff);
-	}
-	if(method == POST)
-	{
-		char buff[100];
-		int content_length = strlen(message);
-		memset(buff,0,sizeof(buff));
-		sprintf(buff,"Content-Type:application/x-www-form-urlencoded \r\n"\
-		"Content-Length:%d\r\n\r\n",content_length);
-		strcat(s->request,buff);
-		strcat(s->request,message);
-	}
-	else{
-		strcat(s->request,"nConnection: Close\r\n\r\n");
-	}
-//	sprintf(s->request,
-//					"GET %s HTTP/1.1\r\n"\
-//					"Accept: */*\r\n "\
-//					"Accept-Language: zh-cn\r\n"\
-//					"User-Agent: Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)\r\n"\
-//					"Host: %s:%d\r\n"\
-//					"Connection: Close\r\n\r\n",
-//					s->requestedURL,http_server,
-//					http_server_port);
-  LWIP_DEBUGF(HTTPC_DEBUG,("%s", s->request));//准备request，将要发送给主机
-  len = strlen(s->request);
-  LWIP_ASSERT("string is too long", len <= 0xffff);
-  s->request_len = (u16_t)len;
-  /* call the actual implementation of this function */
-  return httpc_sendrequest_allocated(s);
-}
 
 err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err)
  {
@@ -462,25 +296,19 @@ err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err)
 	 sqlc_ptr->timer = SQLC_TIMEOUT;
 	 tcp_recv(pcb, sqlc_recv);
 	 sqlc_ptr->state = SQLC_CONNECTED ;
-//	 ret_code = httpc_send_request(pcb,s->request + s->request_sent);
-//	 if(ret_code == ERR_OK) {
-//		 LWIP_DEBUGF(HTTPC_DEBUG,("sqlc_connected():Request Sent \n\r"));
-//	 }
-//	 else {
-//		 LWIP_DEBUGF(HTTPC_DEBUG,("sqlc_connected():Sending Request failed %d \n\r",ret_code));
-//		// inform application to wait untill buffer is not busy  ?
-//		// tcp_close(pcb);
-//		 ret_code = ERR_ABRT;
-//		 httpc_close(s,HTTPC_TCP_MEM_ERR);//,ERR_MEM);
-//	 }
-	 return ret_code; // ??
+
+	 return ret_code;
 }
-//still...
 void sqlc_err(void *arg, err_t err)
  {
 	 struct sql_connector *s = arg;
 	 LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_err():error at client : %d\n\r",err));
-	 if(s->connector_state == CONNECTOR_STATE_CONNECTING  && s->state == SQLC_CONNECTED){
+	 if(s->connector_state == CONNECTOR_STATE_CONNECTING  && (s->state <= SQLC_SENT)){
+		 s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
+		 s->es = CONNECTOR_ERROR_TCP_ERROR;
+		 s->state = SQLC_CLOSED;
+	 }else if (s->connected && s->connector_state == CONNECTOR_STATE_IDLE){
+		 s->connected = 0 ;
 		 s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
 		 s->es = CONNECTOR_ERROR_TCP_ERROR;
 		 s->state = SQLC_CLOSED;
@@ -496,7 +324,7 @@ err_t sqlc_poll(void *arg, struct tcp_pcb *pcb)
 	if (arg != NULL) {
 		struct sql_connector *s = arg;
 		LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_poll(): %d\n\r",s->timer));
-		if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == SQLC_NEW){
+		if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state <= SQLC_SENT){
 			if (s->timer != 0) {
 				s->timer--;
 			}
@@ -511,15 +339,6 @@ err_t sqlc_poll(void *arg, struct tcp_pcb *pcb)
 			}
 		}
 		// TODO handle other events..
-		if(s->state == SQLC_SENT && s->request_sent != s->request_len){
-			LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_poll: continue sending the request\n\r"));
-			err = httpc_send_request(pcb,s->request+s->request_sent);
-			if(err!= ERR_OK){
-				 LWIP_DEBUGF(SQLC_DEBUG,("sqlc_poll():Sending Request failed %d \n\r",ret_code));
-				 ret_code = ERR_ABRT;
-				 httpc_close(s,HTTPC_TCP_MEM_ERR);//,ERR_MEM);
-			}
-		}
 	}
 	else{
 		LWIP_DEBUGF(HTTPC_DEBUG, ("sqlc_poll: something wrong\n\r"));
@@ -533,25 +352,16 @@ sqlc_cleanup(struct sql_connector *s)
 	if(s->pcb)
 		/* try to clean up the pcb if not already deallocated*/
 		sqlc_close(s);
-}
- /** Frees the smpt_session and calls the callback function */
-static void
-httpc_free(struct httpc_session *s,u8_t result)//, err_t err)
-{
-	httpc_result_fn fn = s->callback_fn;
-	void *arg = s->callback_arg;
-	LWIP_DEBUGF(HTTPC_DEBUG, ("httpc_free()\r\n"));
-  if (s->p != NULL) {
-    pbuf_free(s->p);
-  }
-	if(s->request !=NULL){
-		mem_free(s->request);
+	if(s->payload){
+		mem_free(s->payload);
+		s->payload = NULL;
 	}
-  mem_free(s);
-	if (fn != NULL) {
-    fn(arg, result);//, err);
-  }
+	if(s->server_version){
+		mem_free(s->server_version);
+		s->server_version = NULL;
+	}
 }
+
 /** Try to close a pcb and free the arg if successful */
 static int
 sqlc_close(struct sql_connector *s)//, err_t err)
@@ -568,47 +378,19 @@ sqlc_close(struct sql_connector *s)//, err_t err)
 	}
 	/* close failed, set back arg */
 	tcp_arg(s->pcb, s);
+	s->connected = 0 ;
 	sqlc_cleanup(s);
 	return 1;
 }
-/** Try to close a pcb and free the arg if successful */
-static void
-httpc_close(struct httpc_session *s,u8_t result)//, err_t err)
-{
-	LWIP_DEBUGF(HTTPC_DEBUG, ("httpc_close()\r\n"));
-  tcp_arg(s->pcb, NULL);
-  tcp_poll(s->pcb,NULL,0);  // may be wrong ?
-  tcp_sent(s->pcb, NULL);
-  tcp_recv(s->pcb, NULL);
-  tcp_err(s->pcb, NULL);
-  tcp_connect(s->pcb,NULL,0,NULL);
-	if(  result == HTTPC_BUFFER_ERR /* test it by small buffers*/
-		/*|| result == HTTPC_RESULT_ERR_CONNECT */
-	  /*|| result == HTTPC_RESULT_ERR_UNKNOWN */ /* will never happen */
-	  || result == HTTPC_RESULT_ERR_TIMEOUT
-	  || result == HTTPC_TCP_MEM_ERR){
-			tcp_abort(s->pcb);
-			if (s != NULL) {
-				httpc_free(s,result);//,err);
-			}
-	}
-  else if (tcp_close(s->pcb) == ERR_OK) {
-    if (s != NULL) {
-      httpc_free(s,result);//,err);
-    }
-  } else {
-    /* close failed, set back arg */
-    tcp_arg(s->pcb, s);
-  }
-}
+
 char seed[20];
-char* server_version = NULL;
-void parse_handshake_packet(struct pbuf *p)
+
+void parse_handshake_packet(struct sql_connector s,struct pbuf *p)
 {
 	int len = strlen(p->payload[5]);
-	server_version = mem_malloc(len);
-	if(server_version)
-		strcpy(server_version,p->payload[5]);
+	s->server_version = mem_malloc(len);
+	if(s->server_version)
+		strcpy(s->server_version,p->payload[5]);
 	int seed_index = len + 6 ;
 	for(int i = 0 ; i < 8 ; i++)
 		seed[i] = p->payload[seed_index + i ];
@@ -618,12 +400,183 @@ void parse_handshake_packet(struct pbuf *p)
 		seed[i + 8] = p->payload[seed_index + i ];
 	}
 }
+err_t sqlc_send(struct tcp_pcb *pcb,char* payload){
+	int len ;
+	err_t ret_code = ERR_OK,err;
+	len=strlen(payload);
+	if(len > tcp_sndbuf(pcb)){
+		LWIP_DEBUGF(HTTPC_DEBUG,("httpc_send_request: request length is Larger than max amount%d\n\r",err));
+		len = tcp_sndbuf(pcb);
+	}
+	LWIP_DEBUGF(HTTPC_DEBUG, ("httpc_send_request: TCP write: %d\r\n",len));
+	err =  tcp_write(pcb, payload, len, 1);
+	if (err != ERR_OK) {
+		LWIP_DEBUGF(HTTPC_DEBUG,("httpc_send_request: error writing! %d\n\r",err));
+		ret_code = err ;
+		return ret_code;
+	}
+	tcp_sent(pcb, sqlc_sent);
+	return ret_code;
+}
+char scramble_password(char* password , char* scramble)
+{
+
+
+		return 1;
+}
+err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb, char *user, char *password)
+{
+	s->payload = (char*) mem_malloc(256);
+	if(s){
+	  int size_send = 4;
+	  err_t err = ERR_OK;
+	  // client flags
+	  s->payload[size_send] = 0x85;
+	  s->payload[size_send+1] = 0xa6;
+	  s->payload[size_send+2] = 0x03;
+	  s->payload[size_send+3] = 0x00;
+	  size_send += 4;
+
+	  // max_allowed_packet
+	  s->payload[size_send] = 0;
+	  s->payload[size_send+1] = 0;
+	  s->payload[size_send+2] = 0;
+	  s->payload[size_send+3] = 1;
+	  size_send += 4;
+
+	  // charset - default is 8
+	  s->payload[size_send] = 0x08;
+	  size_send += 1;
+	  for(int i = 0; i < 24; i++)
+	    s->payload[size_send+i] = 0x00;
+	  size_send += 23;
+
+	  // user name
+	  memcpy((char *)&s->payload[size_send], user, strlen(user));
+	  size_send += strlen(user) + 1;
+	  s->payload[size_send-1] = 0x00;
+
+	  // password - see scramble password
+	   char scramble[20];
+	   if (scramble_password(password, scramble)) {
+	     s->payload[size_send] = 0x14;
+	     size_send += 1;
+	     for (int i = 0; i < 20; i++)
+	       s->payload[i+size_send] = scramble[i];
+	     size_send += 20;
+	     s->payload[size_send] = 0x00;
+	   }
+	   // terminate password response
+	   s->payload[size_send] = 0x00;
+	   size_send += 1;
+
+	   // database
+	   s->payload[size_send+1] = 0x00;
+	   size_send += 1;
+	   s->payload_len = size_send;
+	   // Write packet size
+	   int p_size = size_send - 4;
+	   store_int(&s->payload[0], p_size, 3);
+	   s->payload[3] = 0x01;
+	   err = sqlc_send(pcb, s->payload);
+	   return err;
+	}
+	return ERR_MEM;
+}
+/*
+  get_lcb_len - Retrieves the length of a length coded binary value
+
+  This reads the first byte from the offset into the buffer and returns
+  the number of bytes (size) that the integer consumes. It is used in
+  conjunction with read_int() to read length coded binary integers
+  from the buffer.
+
+  Returns integer - number of bytes integer consumes
+*/
+int get_lcb_len(char* buffer,int offset) {
+  int read_len = buffer[offset];
+  if (read_len > 250) {
+    // read type:
+    char type = buffer[offset+1];
+    if (type == 0xfc)
+      read_len = 2;
+    else if (type == 0xfd)
+      read_len = 3;
+    else if (type == 0xfe)
+      read_len = 8;
+  }
+  return 1;
+}
+
+/*
+  read_int - Retrieve an integer from the buffer in size bytes.
+
+  This reads an integer from the buffer at offset position indicated for
+  the number of bytes specified (size).
+
+  offset[in]      offset from start of buffer
+  size[in]        number of bytes to use to store the integer
+
+  Returns integer - integer from the buffer
+*/
+int read_int(char* buffer,int offset, int size) {
+  int value = 0;
+  int new_size = 0;
+  if (size == 0)
+     new_size = get_lcb_len(offset);
+  if (size == 1)
+     return buffer[offset];
+  new_size = size;
+  int shifter = (new_size - 1) * 8;
+  for (int i = new_size; i > 0; i--) {
+    value += (char)(buffer[i-1] << shifter);
+    shifter -= 8;
+  }
+  return value;
+}
+
+int check_ok_packet(char* buffer) {
+	if(buffer != NULL){
+	  int type = buffer[4];
+	  if (type != MYSQL_OK_PACKET)
+		return type;
+	  return 0;
+	}
+	return MYSQL_ERROR_PACKET;
+}
+
+/*
+  parse_error_packet - Display the error returned from the server
+
+  This method parses an error packet from the server and displays the
+  error code and text via Serial.print. The error packet is defined
+  as follows.
+
+  Note: the error packet is already stored in the buffer since this
+        packet is not an expected response.
+
+  Bytes                       Name
+  -----                       ----
+  1                           field_count, always = 0xff
+  2                           errno
+  1                           (sqlstate marker), always '#'
+  5                           sqlstate (5 characters)
+  n                           message
+*/
+void parse_error_packet(char* buffer,int packet_len) {
+  LWIP_DEBUGF(SQLC_DEBUG,("Error: "));
+  LWIP_DEBUGF(SQLC_DEBUG,("%d",read_int(buffer,5, 2)));
+  LWIP_DEBUGF(SQLC_DEBUG,(" = "));
+  for (int i = 0; i < packet_len-9; i++)
+	  LWIP_DEBUGF(SQLC_DEBUG,("%c",(char)buffer[i+13]));
+  LWIP_DEBUGF(SQLC_DEBUG,("."));
+}
+
 err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
      err_t ret_code = ERR_OK;
      struct sql_connector* s = arg;
 	 LWIP_UNUSED_ARG(err);
-//	 s->timer = SQLC_TIMEOUT;
 	 if(p != NULL)
 	 {
 		 struct pbuf *q;
@@ -634,40 +587,56 @@ err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 		 }else {
 				pbuf_cat(s->p, p);
 		 }
-		 if(s->connector_state == CONNECTOR_STATE_CONNECTING){
+		 if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == SQLC_CONNECTED){
 			 if(p->tot_len > 4){
 				 unsigned long packet_length = p->payload[0];
 				 packet_length += p->payload[1]<<8;
 				 packet_length += p->payload[2]<<16;
 				 if(p->tot_len >= packet_length + 4){
-					 parse_handshake_packet(p);
+					 parse_handshake_packet(s,p);
 					 tcp_recved(pcb, p->tot_len);
 				     pbuf_free(p);
+				     err_t err = send_authentication_packet(pcb,s->username,s->password);
+				     if(err != ERR_OK){
+				    	 s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
+				    	 s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
+				    	 /* Don't Need to close the connection as the server will already abort it on time out ??*/
+				     }
+				     s->es = CONNECTOR_ERROR_OK;
+				     s->timer = SQLC_TIMEOUT;
 				 }
 			 }
+		 }else if (s->connector_state == CONNECTOR_STATE_CONNECTING && (s->state == SQLC_RECV || s->state == SQLC_SENT)){
+			 if(p->tot_len > 4){
+				 unsigned long packet_length = p->payload[0];
+				 packet_length += p->payload[1]<<8;
+				 packet_length += p->payload[2]<<16;
+				 if(p->tot_len >= packet_length + 4){
+					    if (check_ok_packet(p->payload) != 0) {
+					      parse_error_packet(p->payload,p->tot_len);
+					      // return false; meaning tell the user we don't have the connection , further close it...
+					      s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
+						  s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
+						  sqlc_close(s);
+					    }
+					    LWIP_DEBUGF(SQLC_DEBUG, ("Connected to server version %s\n\r",s->server_version));
+					    mem_free(s->server_version);
+					    s->server_version = NULL;
 
 
-		 }
-		 //LWIP_DEBUGF(HTTPC_DEBUG,("sqlc_recv():The following is the response header:\n"));
-		 if((s->user_stack->top + s->p->tot_len)< MAX_STACK_SIZE){
-			 for (q = s->p; q != NULL; q = q->next) {
-				 for(i=0;i<q->len ;i++){
-					 s->user_stack->items[s->user_stack->top]=((char *)(q->payload))[i];
-					 s->user_stack->top++;
+					    // Tell the application the Good news ?
+					    s->connected = 1 ; // TODO handle error , sent , poll events.. if connected
+					    s->connector_state = CONNECTOR_STATE_IDLE;
+					    s->es = CONNECTOR_ERROR_OK;
 				 }
 			 }
-			 tcp_recved(pcb, p->tot_len);
-		     pbuf_free(p);
-	   }
-	   else{
-			  LWIP_DEBUGF(HTTPC_DEBUG,("sqlc_recv():your stack size is not enough\r\n"));
-				ret_code = ERR_ABRT; // or ERR_MEM and recieve later ?? in this case don't close.
-				httpc_close(s,HTTPC_BUFFER_ERR);//,ERR_BUF);
 		 }
+	     s->state = SQLC_RECV;
 	 }
 	 else{
 		 LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_recv: connection closed by remote host\n\r"));
-		 if(s->connector_state == CONNECTOR_STATE_CONNECTING  && s->state == SQLC_CONNECTED){
+		 if((s->connector_state == CONNECTOR_STATE_CONNECTING  )
+				 && (s->state == SQLC_CONNECTED || s->state == SQLC_RECV || s->state == SQLC_SENT)){
 			 s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
 			 s->es = CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION;
 		 }
@@ -677,31 +646,27 @@ err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 
 	 return ret_code;
 }
-err_t httpc_send_request(struct tcp_pcb *pcb,char* request){
-	int len ;
-  err_t ret_code = ERR_OK,err;
-  len=strlen(request);
-	if(len > tcp_sndbuf(pcb)){
-		LWIP_DEBUGF(HTTPC_DEBUG,("httpc_send_request: request lenght is Larger than max amount%d\n\r",err));
-		len = tcp_sndbuf(pcb);
-	}
-	LWIP_DEBUGF(HTTPC_DEBUG, ("httpc_send_request: TCP write: %d\r\n",len));
-		 err =  tcp_write(pcb, request, len, 0);
-		 if (err != ERR_OK) {
-				LWIP_DEBUGF(HTTPC_DEBUG,("httpc_send_request: error writing! %d\n\r",err));
-				ret_code = err ;
-			  return ret_code;
-		 }
-		 tcp_sent(pcb, httpc_sent);
-     return ret_code;
-}
-err_t httpc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
+err_t sqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
 {
-	struct httpc_session* s = arg;
-	LWIP_DEBUGF(HTTPC_DEBUG,("httpc_sent:Done Sending to client : %d",len));
-  LWIP_DEBUGF(HTTPC_DEBUG,("\n\r"));
+	struct sql_connector * s = arg;
+	LWIP_DEBUGF(SQLC_DEBUG,("sqlc_sent:Done Sending to client : %d",len));
+    LWIP_DEBUGF(SQLC_DEBUG,("\n\r"));
+    if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == SQLC_RECV){
+
+    	s->timer = SQLC_TIMEOUT;
+    }
+    s->payload_sent +=len;
+    if(s->payload && s->payload_len - s->payload_sent)
+    {
+    	sqlc_send(pcb,&s->payload[s->payload_sent]);
+    }
+    else if (s->payload && !(s->payload_len - s->payload_sent))
+    {
+    	mem_free(s->payload);
+    	s->payload = NULL;
+    }
 	s->state = SQLC_SENT;
-	s->request_sent += len ;
+
   return ERR_OK;
 }
 

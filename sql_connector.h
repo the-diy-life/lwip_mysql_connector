@@ -22,6 +22,14 @@
 #define INC_SQL_CONNECTOR_H_
 
 #include "lwip/err.h"
+
+
+#define MYSQL_OK_PACKET     0x00
+#define MYSQL_EOF_PACKET    0xfe
+#define MYSQL_ERROR_PACKET  0xff
+
+
+
 /** Request successfully got */
 #define SQLC_RESULT_OK            0
 /** Unknown error */

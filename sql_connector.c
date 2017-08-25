@@ -131,6 +131,8 @@ static void sqlc_cleanup(struct sql_connector *s);
 static int
 sqlc_close(struct sql_connector *s);
 
+err_t sqlc_send(struct tcp_pcb *pcb,struct sql_connector* s);
+void store_int(char *buff, long value, int size);
 void Encrypt_SHA1_init(struct sql_connector* s) {
   memcpy(s->sha1_state.b,sha1InitState,HASH_LENGTH);
   s->byteCount = 0;
@@ -417,7 +419,36 @@ int sqlc_is_connected(sqlc_descriptor*d, char* connected)
 	*connected = sqlcd_array[i].sqlc->connected;
 	return 0 ;
 }
+int sqlc_execute(sqlc_descriptor*d,const char* query){
+	int i ;
+	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
+		if(sqlcd_array[i].sqlc_d == d)
+			break;
+	}
+	if(i == MAX_SQL_CONNECTORS)
+		return 1 ;
+	struct sql_connector* s = sqlcd_array[i].sqlc;
 
+	if(!s->connected)
+		return 1 ;
+	if(s->connector_state != CONNECTOR_STATE_IDLE && s->connector_state != CONNECTOR_STATE_CONNECTOR_ERROR)
+		return 1;
+
+	int query_len = strlen(query);
+	s->payload  = (char*) mem_malloc( query_len + 5 );
+	if(!s->payload)
+		return 1 ;
+	memcpy(&s->payload[5], query,query_len);
+	store_int(&s->payload[0], query_len+1, 3);
+	s->payload[3] = 0x00;
+	s->payload[4] = 0x03;  // command packet
+	s->payload_len = query_len + 5;
+	if(sqlc_send(s->pcb,s) != ERR_OK)
+		return 1;
+	s->connector_state = CONNECTOR_STATE_SENDING;
+	s->es = CONNECTOR_ERROR_OK;
+	return 0;
+}
 
 err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err)
  {
@@ -438,12 +469,13 @@ void sqlc_err(void *arg, err_t err)
 		 s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
 		 s->es = CONNECTOR_ERROR_TCP_ERROR;
 		 s->state = SQLC_CLOSED;
-	 }else if (s->connected && s->connector_state == CONNECTOR_STATE_IDLE){
+	 }else if (s->connected){
 		 s->connected = 0 ;
 		 s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
 		 s->es = CONNECTOR_ERROR_TCP_ERROR;
 		 s->state = SQLC_CLOSED;
 	 }
+
 	 //@ TODO handle other events , basically we check the connector state and the session state...
 	 sqlc_cleanup(s);
 
@@ -455,7 +487,7 @@ err_t sqlc_poll(void *arg, struct tcp_pcb *pcb)
 	if (arg != NULL) {
 		struct sql_connector *s = arg;
 		LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_poll(): %d\n\r",s->timer));
-		if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state <= SQLC_SENT){
+		if(s->connector_state == CONNECTOR_STATE_CONNECTING){
 			if (s->timer != 0) {
 				s->timer--;
 			}
@@ -468,6 +500,16 @@ err_t sqlc_poll(void *arg, struct tcp_pcb *pcb)
 				s->state = SQLC_CLOSED;
 				ret_code = ERR_ABRT;
 			}
+		}else if(s->connector_state == CONNECTOR_STATE_SENDING)
+		{
+			if (s->timer != 0) {
+				s->timer--;
+			}
+
+			if (s->timer == 0) {
+			      s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
+				  s->es = CONNECTOR_ERROR_SENDING;
+			}
 		}
 		// TODO handle other events..
 	}
@@ -475,14 +517,15 @@ err_t sqlc_poll(void *arg, struct tcp_pcb *pcb)
 		LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_poll: something wrong\n\r"));
 	}
  return ret_code;
- }
+}
 static void
 sqlc_cleanup(struct sql_connector *s)
 {
 	LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_cleanup()\r\n"));
-	if(s->pcb)
+	if(s->pcb){
 		/* try to clean up the pcb if not already deallocated*/
 		sqlc_close(s);
+	}
 	if(s->payload){
 		mem_free(s->payload);
 		s->payload = NULL;
@@ -505,6 +548,9 @@ sqlc_close(struct sql_connector *s)
 	tcp_err(s->pcb, NULL);
 	tcp_connect(s->pcb,NULL,0,NULL);
 	if (tcp_close(s->pcb) == ERR_OK) {
+		s->connected = 0 ;
+		s->pcb = NULL;
+		sqlc_cleanup(s);
 	  return 0 ;
 	}
 	/* close failed, set back arg */
@@ -540,7 +586,7 @@ err_t sqlc_send(struct tcp_pcb *pcb,struct sql_connector* s){
 		len = tcp_sndbuf(pcb);
 	}
 	LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_send: TCP write: %d\r\n",len));
-	err =  tcp_write(pcb, s->payload, len, 1);
+	err =  tcp_write(pcb, s->payload, len, 0);
 	if (err != ERR_OK) {
 		LWIP_DEBUGF(SQLC_DEBUG,("sqlc_send: error writing! %d\n\r",err));
 		ret_code = err ;
@@ -616,6 +662,7 @@ void store_int(char *buff, long value, int size) {
     buff[3] = (char)(value >> 24);
   }
 }
+
 err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb,const char *user,const char *password)
 {
 	s->payload = (char*) mem_malloc(256);
@@ -788,14 +835,16 @@ err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 					 parse_handshake_packet(s,p);
 					 tcp_recved(pcb, p->tot_len);
 				     pbuf_free(p);
+				     s->p = NULL;
 				     err_t err = send_authentication_packet(s,pcb,(const char*)s->username,(const char*)s->password);
 				     if(err != ERR_OK){
 				    	 s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
 				    	 s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
 				    	 /* Don't Need to close the connection as the server will already abort it on time out ??*/
+				     }else{
+						 s->es = CONNECTOR_ERROR_OK;
+						 s->timer = SQLC_TIMEOUT;
 				     }
-				     s->es = CONNECTOR_ERROR_OK;
-				     s->timer = SQLC_TIMEOUT;
 				 }
 			 }
 		 }else if (s->connector_state == CONNECTOR_STATE_CONNECTING && (s->state == SQLC_RECV || s->state == SQLC_SENT)){
@@ -815,14 +864,44 @@ err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 							mem_free(s->server_version);
 							s->server_version = NULL;
 
-
+							s->timer = SQLC_TIMEOUT;
 							// Tell the application the Good news ?
 							s->connected = 1 ; // TODO handle error , sent , poll events.. if connected
 							s->connector_state = CONNECTOR_STATE_IDLE;
 							s->es = CONNECTOR_ERROR_OK;
 					    }
+						 tcp_recved(pcb, p->tot_len);
+					     pbuf_free(p);
+					     s->p = NULL;
 				 }
 			 }
+		 }else if (s->connector_state == CONNECTOR_STATE_SENDING){
+			 if(p->tot_len > 4){
+				 unsigned long packet_length = ((char*)p->payload)[0];
+				 packet_length += ((char*)p->payload)[1]<<8;
+				 packet_length += ((char*)p->payload)[2]<<16;
+				 if(p->tot_len >= packet_length + 4){
+					    if (check_ok_packet((char*)p->payload) != 0) {
+					      parse_error_packet((char*)p->payload,p->tot_len);
+					      // return false; meaning tell the user we don't have the connection , further close it...
+					      s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
+						  s->es = CONNECTOR_ERROR_SENDING;
+					    }else{
+							LWIP_DEBUGF(SQLC_DEBUG, ("Received \"Ok packet\" after sending Query \n\r"));
+
+							// Tell the application the Good news ?
+							s->connector_state = CONNECTOR_STATE_IDLE;
+							s->es = CONNECTOR_ERROR_OK;
+					    }
+						 tcp_recved(pcb, p->tot_len);
+					     pbuf_free(p);
+					     s->p = NULL;
+				 }
+			 }
+
+		 }else{
+			 tcp_recved(pcb, p->tot_len);
+		     pbuf_free(p);
 		 }
 	     s->state = SQLC_RECV;
 	 }
@@ -847,19 +926,24 @@ err_t sqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
     if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == SQLC_RECV){
 
     	s->timer = SQLC_TIMEOUT;
+    }else if (s->connector_state == CONNECTOR_STATE_SENDING){
+    	s->timer = SQLC_TIMEOUT;
     }
     s->payload_sent +=len;
     if(s->payload && s->payload_len - s->payload_sent)
     {
     	sqlc_send(pcb,s);
     }
-    else if (s->payload && !(s->payload_len - s->payload_sent))
+    else
     {
-    	mem_free(s->payload);
-    	s->payload = NULL;
-    }
-	s->state = SQLC_SENT;
+    	s->state = SQLC_SENT;
 
+    	if (s->payload && !(s->payload_len - s->payload_sent)){
+			mem_free(s->payload);
+			s->payload = NULL;
+			s->payload_sent = 0;
+    	}
+    }
   return ERR_OK;
 }
 

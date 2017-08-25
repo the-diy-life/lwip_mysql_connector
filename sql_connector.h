@@ -60,7 +60,8 @@ enum error_state {
 	CONNECTOR_ERROR_NOT_CONNECTED,
 	CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION,
 	CONNECTOR_ERROR_TCP_ERROR,
-	CONNECTOR_ERROR_CANNOT_CONNECT
+	CONNECTOR_ERROR_CANNOT_CONNECT,
+	CONNECTOR_ERROR_SENDING,
 	// So on...
 };
 /*
@@ -85,7 +86,7 @@ int sqlc_delete(sqlc_descriptor*d);
 int sqlc_get_state(sqlc_descriptor*d,enum state* state);
 int sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es);
 int sqlc_is_connected(sqlc_descriptor*d, char* connected);
-
+int sqlc_execute(sqlc_descriptor*d,const char* query);
 
 
 #endif /* INC_SQL_CONNECTOR_H_ */

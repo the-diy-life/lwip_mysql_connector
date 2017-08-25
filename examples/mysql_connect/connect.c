@@ -16,6 +16,30 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
   Created on: Aug 24, 2017
        Author: Amr Elsayed
+	   
+	   
+	   
+example : 
+		#include "lwip.h"
+		#include "connect.h"
+		
+		int main(void)
+		{
+				MX_LWIP_Init();
+			
+				while(1){
+					
+					hal_time = HAL_GetTick();
+					MX_LWIP_Process(hal_time);
+					connect_periodic_handler();			
+					
+					
+				}
+			
+			
+		}
+		
+		
  */
 
 #include "sql_connector.h"
@@ -60,7 +84,6 @@ void connect_periodic_handler(void)
 			if(connected){
 				// success , celebrate...
 				 LWIP_DEBUGF(LWIP_DBG_ON, ("connect_periodic_handler():Connected\n\r"));
-
 
 			}
 			break;

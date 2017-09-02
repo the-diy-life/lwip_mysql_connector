@@ -62,7 +62,7 @@ const char password[] = "password";
 enum connect_states cs = CONNECT_INIT;
 void connect_periodic_handler(void)
 {
-	int ret = 0 ;
+	u16_t ret = 0 ;
 	char connected = 0 ;
 	switch(cs){
 

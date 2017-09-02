@@ -1,5 +1,5 @@
 /*
- insert.c
+ select.c
  Copyright (c) 2017 DIY Life. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
@@ -14,7 +14,7 @@
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
-  Created on: Aug 25, 2017
+  Created on: Aug 26, 2017
        Author: Amr Elsayed
 
 
@@ -30,7 +30,7 @@
 
 					hal_time = HAL_GetTick();
 					MX_LWIP_Process(hal_time);
-					insert_periodic_handler(hal_time);
+					select_periodic_handler(hal_time);
 
 
 				}
@@ -41,7 +41,7 @@
  */
 
 #include "sql_connector.h"
-#include "./insert.h"
+#include "./select.h"
 #include "lwip/debug.h"
 
 
@@ -54,19 +54,22 @@ enum connect_states{
 	CONNECTING,
 	CONNECTED
 };
-
-const char hostname[] = "192.168.1.69";
+enum select_states{
+	EXECUTE,
+	READ
+};
+const char hostname[] = "192.168.1.111";
 const char username[] = "arduino";
 const char password[] = "password";
 
 enum connect_states cs = INIT;
+enum select_states ss = EXECUTE;
+#define SELECT_PERIOD  10000
 
-#define INSERT_PERIOD  10000
-
-u32_t insert_time = 0 ;
+u32_t select_time = 0 ;
 
 u16_t dummy = 0;
-char query[1024];
+char read_query[] = "USE powermeter; SELECT * FROM `pm_income` ORDER BY pk_income DESC LIMIT 1;";
 void construct_query(char query[]){
   sprintf(query,"use powermeter;"\
   "insert into pm_income "\
@@ -74,9 +77,9 @@ void construct_query(char query[]){
   "values (%s,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,NOW());","1000",dummy,dummy,dummy,dummy,dummy,dummy,dummy,dummy,dummy,dummy,dummy,dummy);
   dummy++;
 }
-void insert_periodic_handler(u32_t time)
+void select_periodic_handler(uint32_t time)
 {
-	int ret = 0 ;
+	u16_t ret = 0 ;
 	char connected = 0 ;
 	switch(cs){
 		case INIT:
@@ -104,7 +107,7 @@ void insert_periodic_handler(u32_t time)
 				if(ret)
 					cs = INIT;/* No connector then recreate it*/
 				else if(state != CONNECTOR_STATE_CONNECTING){
-				 LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Not Connected\n\r"));
+				 LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Not Connected\n\r"));
 				 cs = CONNECT;
 				}
 			}else{
@@ -117,28 +120,60 @@ void insert_periodic_handler(u32_t time)
 			if(ret)
 				cs = INIT;
 			else if(!connected){
-				 LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Not Connected\n\r"));
+				 LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Not Connected\n\r"));
 				 cs =  CONNECT;
+				 ss = EXECUTE;
 			}else{
-				enum state state;
-				if(time - insert_time >  INSERT_PERIOD){
-					ret = sqlc_get_state(&sd,&state);
-					if(!ret){
-						if(state == CONNECTOR_STATE_IDLE || state == CONNECTOR_STATE_CONNECTOR_ERROR)
-						{
-							construct_query(query);
-							ret = sqlc_execute(&sd,query);
-							if(!ret){
-								insert_time = time;
-								 LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Inserting...\n\r"));
-							}
+				switch(ss){
+				case EXECUTE:
+				{
+					enum state state;
+					if(time - select_time >  SELECT_PERIOD){
+						ret = sqlc_get_state(&sd,&state);
+						if(!ret){
+							if(state == CONNECTOR_STATE_IDLE || state == CONNECTOR_STATE_CONNECTOR_ERROR)
+							{
+								ret = sqlc_execute(&sd,read_query);
+								if(!ret){
+									 ss = READ;
+									 LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Reading...\n\r"));
+								}
 
+							}
+						}else{
+							cs = INIT;
+							ss= EXECUTE;
 						}
-					}else{
-						cs = INIT;
 					}
 				}
+					break;
+				case READ:
+				{
+					enum state state;
+					ret = sqlc_get_state(&sd,&state);
+					if(state == CONNECTOR_STATE_IDLE ){
+						column_names* columns = NULL;
+						columns = mysqlc_get_columns(&sd);
+						if(columns){
 
+						   row_values* row = mysqlc_get_next_row(&sd);
+						   if (row != NULL) {
+							  long value;
+							  LWIP_DEBUGF(LWIP_DBG_ON, ("number of fields is  %d\r\n",columns->num_fields));
+							  for ( int i = 0 ; i < columns->num_fields ; i++){
+								  LWIP_DEBUGF(LWIP_DBG_ON, ("%s, ",row->values[i]));
+								//d[i-1] = atol(row->values[i]);
+							  }
+							}
+						   ss = EXECUTE;
+						}
+						//ss = EXECUTE;
+					}else if(state == CONNECTOR_STATE_CONNECTOR_ERROR ){
+						ss = EXECUTE;
+					}
+				}
+					break;
+				}
 			}
 			break;
 		default:

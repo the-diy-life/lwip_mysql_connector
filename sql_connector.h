@@ -76,17 +76,41 @@ enum state {
 	CONNECTOR_STATE_SENDING_DONE,
 	CONNECTOR_STATE_CONNECTOR_ERROR
 };
-typedef int sqlc_descriptor;
+
+#define MAX_FIELDS    0x20   // Maximum number of fields. Reduce to save memory. Default=32
+
+// Structure for retrieving a field (minimal implementation).
+typedef struct {
+  char *db;
+  char *table;
+  char *name;
+} field_struct;
+
+// Structure for storing result set metadata.
+typedef struct {
+  u16_t num_fields;     // actual number of fields
+  field_struct *fields[MAX_FIELDS];
+} column_names;
+
+// Structure for storing row data.
+typedef struct {
+  char *values[MAX_FIELDS];
+} row_values;
+
+typedef u16_t sqlc_descriptor;
 #define MAX_SQL_CONNECTORS 10
 
-int sqlc_create( sqlc_descriptor* d );
-int sqlc_connect(sqlc_descriptor* d ,const char* hostname ,int port, const char* username ,const char* password );
-int sqlc_disconnect(sqlc_descriptor*d);
-int sqlc_delete(sqlc_descriptor*d);
-int sqlc_get_state(sqlc_descriptor*d,enum state* state);
-int sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es);
-int sqlc_is_connected(sqlc_descriptor*d, char* connected);
-int sqlc_execute(sqlc_descriptor*d,const char* query);
+u16_t sqlc_create( sqlc_descriptor* d );
+u16_t sqlc_connect(sqlc_descriptor* d ,const char* hostname ,u16_t port, const char* username ,const char* password );
+u16_t sqlc_disconnect(sqlc_descriptor*d);
+u16_t sqlc_delete(sqlc_descriptor*d);
+u16_t sqlc_get_state(sqlc_descriptor*d,enum state* state);
+u16_t sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es);
+u16_t sqlc_is_connected(sqlc_descriptor*d, char* connected);
+u16_t sqlc_execute(sqlc_descriptor*d,const char* query);
 
+
+column_names* mysqlc_get_columns(sqlc_descriptor* d);
+row_values* mysqlc_get_next_row(sqlc_descriptor* d);
 
 #endif /* INC_SQL_CONNECTOR_H_ */

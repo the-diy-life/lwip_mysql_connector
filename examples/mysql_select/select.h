@@ -1,5 +1,5 @@
 /*
- insert.h
+ select.h
  Copyright (c) 2017 DIY Life. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
@@ -14,16 +14,16 @@
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
-  Created on: Aug 24, 2017
+  Created on: Aug 26, 2017
        Author: Amr Elsayed
  */
 
 
-#ifndef _INSERT_H_
-#define _INSERT_H_
+#ifndef _SELECT_H_
+#define _SELECT_H_
 
 
-void insert_periodic_handler(u32_t hal_time);
+void select_periodic_handler(u32_t hal_time);
 
 
 #endif

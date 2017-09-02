@@ -43,7 +43,7 @@
 
 
 #define SQLC_POLL_INTERVAL 4   //  4 * 0.5 SEC.
-#define SQLC_TIMEOUT 10// * 60 * (sqlc_poll_INTERVAL / 2) // two minutes.
+#define SQLC_TIMEOUT 4// * 60 * (sqlc_poll_INTERVAL / 2) // two minutes.
 
 #define HTTP_MAX_REQUEST_LENGTH 1024
 #ifndef SQLC_DEFAULT_PORT
@@ -53,6 +53,7 @@
 #undef SQLCC_DEBUG
 #endif
 #define SQLC_DEBUG         LWIP_DBG_ON
+
 
 enum sqlc_session_state{
 	SQLC_NEW = 0,
@@ -70,15 +71,15 @@ enum sqlc_session_state{
 #define MYSQL_SHA1_K60 0xca62c1d6
 
 union _sha1_buffer {
-  uint8_t b[BLOCK_LENGTH];
-  uint32_t w[BLOCK_LENGTH/4];
+  u8_t b[BLOCK_LENGTH];
+  u32_t w[BLOCK_LENGTH/4];
 };
 union _sha1_state {
-  uint8_t b[HASH_LENGTH];
-  uint32_t w[HASH_LENGTH/4];
+  u8_t b[HASH_LENGTH];
+  u32_t w[HASH_LENGTH/4];
 };
 
-const uint8_t sha1InitState[] = {
+const u8_t sha1InitState[] = {
   0x01,0x23,0x45,0x67, // H0
   0x89,0xab,0xcd,0xef, // H1
   0xfe,0xdc,0xba,0x98, // H2
@@ -94,12 +95,13 @@ struct sql_connector{
 	const char* hostname;
 	const char* username;
 	const char* password;
-	int port;
+	u16_t port;
 	ip_addr_t remote_ipaddr;
 	  /** timeout handling, if this reaches 0, the connection is closed */
     u16_t  timer;
     struct tcp_pcb *pcb;
     struct pbuf* p;
+    u16_t p_index;
     /** this is the body of the payload to be sent */
     char* payload;
     /** this is the length of the body to be sent */
@@ -109,12 +111,17 @@ struct sql_connector{
     char* server_version;
 
     union _sha1_buffer sha1_buffer;
-    uint8_t bufferOffset;
+    u8_t bufferOffset;
     union _sha1_state sha1_state;
-    uint32_t byteCount;
-    uint8_t keyBuffer[BLOCK_LENGTH];
-    uint8_t innerHash[HASH_LENGTH];
+    u32_t byteCount;
+    u8_t keyBuffer[BLOCK_LENGTH];
+    u8_t innerHash[HASH_LENGTH];
     char seed[20];
+
+    u16_t num_cols;
+    column_names columns;
+    row_values row;
+    char columns_read;
 };
 struct sql_cd{
 	sqlc_descriptor* sqlc_d;
@@ -128,23 +135,334 @@ err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err);
 err_t sqlc_poll(void *arg, struct tcp_pcb *pcb);
 err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *pbuf, err_t err);
 static void sqlc_cleanup(struct sql_connector *s);
-static int
+static u16_t
 sqlc_close(struct sql_connector *s);
 
 err_t sqlc_send(struct tcp_pcb *pcb,struct sql_connector* s);
-void store_int(char *buff, long value, int size);
+void store_int(char *buff, u32_t value, u16_t size);
+u16_t get_lcb_len(char* buffer,u16_t offset);
+u16_t read_int(char* buffer,u16_t offset, u16_t size);
+/*
+  mysqlc_read_string - Retrieve a string from the buffer
+
+  This reads a string from the buffer. It reads the length of the string
+  as the first byte.
+
+  offset[in]      offset from start of buffer
+
+  Returns string - String from the buffer
+*/
+char * mysqlc_read_string(struct sql_connector* s,u16_t *offset) {
+  u16_t len_bytes = get_lcb_len(&((char*)(s->p->payload))[s->p_index] ,((char*)(s->p->payload))[s->p_index + *offset]);
+  u16_t len = read_int(&((char*)(s->p->payload))[s->p_index],*offset, len_bytes);
+  char *str = (char *)mem_malloc(len+1);
+  strncpy(str, &((char*)(s->p->payload))[s->p_index + *offset + len_bytes], len);
+  str[len] = 0x00;
+  *offset += len_bytes+len;
+  return str;
+}
+/*
+ * this function is just moving the pointer to the next packet...
+ *
+ *
+ */
+u16_t mysqlc_read_packet(struct sql_connector* s){
+	if(s->p->payload){
+		//u16_t length  = read_int(s->p->payload,s->p_index, 3);
+		 u16_t length = ((char*)s->p->payload)[s->p_index];
+		 length += ((char*)s->p->payload)[s->p_index+1]<<8;
+		 length += ((char*)s->p->payload)[s->p_index+2]<<16;
+		if(length + 4 < s->p->tot_len){
+			s->p_index+= length + 4;
+			struct pbuf* q = pbuf_skip(s->p,s->p_index,&s->p_index);
+			if(s->p!=q){
+				struct pbuf* qp1 = s->p,*qp2 = NULL;
+				while(qp1->next != q){
+					qp2 = qp1;
+					qp1 = qp2->next;
+				}
+				qp1->next = NULL;
+				pbuf_free(s->p);
+				s->p = q;
+			}
+			return 0 ;
+		}
+		return 1 ;
+	}
+	return 1 ;
+}
+/*
+  mysqlc_free_columns_buffer - Free memory allocated for column names
+
+  This method frees the memory allocated during the get_columns()
+  method.
+
+  NOTICE: Failing to call this method after calling get_columns()
+          and consuming the column names, types, etc. will result
+          in a memory leak. The size of the leak will depend on
+          the size of the combined column names (bytes).
+*/
+void mysqlc_free_columns_buffer(struct sql_connector* s) {
+  // clear the columns
+  for (u16_t f = 0; f < MAX_FIELDS; f++) {
+    if (s->columns.fields[f] != NULL) {
+      mem_free(s->columns.fields[f]->db);
+      mem_free(s->columns.fields[f]->table);
+      mem_free(s->columns.fields[f]->name);
+      mem_free(s->columns.fields[f]);
+    }
+    s->columns.fields[f] = NULL;
+  }
+  s->num_cols = 0;
+  s->columns_read = 0;
+}
+
+
+/*
+  mysqlc_free_row_buffer - Free memory allocated for row values
+
+  This method frees the memory allocated during the get_next_row()
+  method.
+
+  NOTICE: You must call this method at least once after you
+          have consumed the values you wish to process. Failing
+          to do will result in a memory leak equal to the sum
+          of the length of values and one byte for each max cols.
+*/
+void mysqlc_free_row_buffer(struct sql_connector* s) {
+  // clear the row
+  for (u16_t f = 0; f < MAX_FIELDS; f++) {
+    if (s->row.values[f] != NULL) {
+    	mem_free(s->row.values[f]);
+    }
+    s->row.values[f] = NULL;
+  }
+}
+/*
+  mysqlc_get_row - Read a row from the server and store it in the buffer
+
+  This reads a single row and stores it in the buffer. If there are
+  no more rows, it returns MYSQL_EOF_PACKET. A row packet is defined as
+  follows.
+
+  Bytes                   Name
+  -----                   ----
+  n (Length Coded String) (column value)
+  ...
+
+  Note: each column is store as a length coded string concatenated
+        as a single stream
+
+  Returns integer - MYSQL_EOF_PACKET if no more rows, 0 if more rows available
+*/
+u16_t mysqlc_get_row(struct sql_connector* s) {
+  // Read row packets
+	u16_t i = 0;
+//	while (i < s->num_cols){
+	  if(mysqlc_read_packet(s))
+		  return MYSQL_EOF_PACKET;
+//	  i++;
+//	}
+//  if (conn->buffer[4] != MYSQL_EOF_PACKET)
+  if (((char*)(s->p->payload))[s->p_index + 4] != MYSQL_EOF_PACKET)
+    return 0;
+  return MYSQL_EOF_PACKET;
+}
+
+
+/*
+  mysql_get_row_values - reads the row values from the read buffer
+
+  This method is used to read the row column values
+  from the read buffer and store them in the row structure
+  in the class.
+*/
+u16_t mysqlc_get_row_values(struct sql_connector* s) {
+  u16_t res = 0;
+  u16_t offset = 0;
+
+  // It is an error to try to read rows before columns
+  // are read.
+  if (!s->columns_read) {
+//    conn->show_error(READ_COLS, true);
+    return MYSQL_EOF_PACKET;
+  }
+  // Drop any row data already read
+  mysqlc_free_row_buffer(s);
+
+  // Read a row
+  res = mysqlc_get_row(s);
+  if (res != MYSQL_EOF_PACKET) {
+    offset = 4;
+    for (u16_t f = 0; f < s->num_cols; f++) {
+      s->row.values[f] = mysqlc_read_string(s,&offset);
+    }
+  }
+  return res;
+}
+
+/*
+  get_field - Read a field from the server
+
+  This method reads a field packet from the server. Field packets are
+  defined as:
+
+  Bytes                      Name
+  -----                      ----
+  n (Length Coded String)    catalog
+  n (Length Coded String)    db
+  n (Length Coded String)    table
+  n (Length Coded String)    org_table
+  n (Length Coded String)    name
+  n (Length Coded String)    org_name
+  1                          (filler)
+  2                          charsetnr
+  4                          length
+  1                          type
+  2                          flags
+  1                          decimals
+  2                          (filler), always 0x00
+  n (Length Coded Binary)    default
+
+  Note: the sum of all db, column, and field names must be < 255 in length
+*/
+u16_t mysqlc_get_field(struct sql_connector* s,field_struct *fs) {
+  u16_t len_bytes;
+  u16_t len;
+  u16_t offset;
+
+  // Read field packets until EOF
+  if(mysqlc_read_packet(s) == 0){
+	  if (((char*)(s->p->payload))[s->p_index + 4] != MYSQL_EOF_PACKET) {
+		// calculate location of db
+		len_bytes = get_lcb_len(&((char*)(s->p->payload))[s->p_index],4);
+		len = read_int(&((char*)(s->p->payload))[s->p_index],4, len_bytes);
+		offset = 4+len_bytes+len;
+		fs->db = mysqlc_read_string(s,&offset);
+		// get table
+		fs->table = mysqlc_read_string(s,&offset);
+		// calculate location of name
+		len_bytes = get_lcb_len(&((char*)(s->p->payload))[s->p_index],offset);
+		len = read_int(&((char*)(s->p->payload))[s->p_index],offset, len_bytes);
+		offset += len_bytes+len;
+		fs->name = mysqlc_read_string(s,&offset);
+		return 0;
+	  }
+  }
+  return MYSQL_EOF_PACKET;
+}
+
+/*
+  mysqlc_get_fields - reads the fields from the read buffer
+
+  This method is used to read the field names, types, etc.
+  from the read buffer and store them in the columns structure
+  in the class.
+*/
+char mysqlc_get_fields(struct sql_connector* s)
+{
+  u16_t num_fields = 0;
+  u16_t res = 0;
+
+  if (s->p->payload== NULL) {
+    return 0;
+  }
+  if(mysqlc_read_packet(s) == 0){ // added
+	  num_fields = ((char*)(s->p->payload))[s->p_index + 4];//conn->buffer[4]; // From result header packet
+	  s->columns.num_fields = num_fields;
+	  s->num_cols = num_fields; // Save this for later use
+	  for (u16_t f = 0; f < num_fields; f++) {
+		field_struct *field = (field_struct *)mem_malloc(sizeof(field_struct));
+		res = mysqlc_get_field(s,field);
+		if (res == MYSQL_EOF_PACKET) {
+		  //conn->show_error(BAD_MOJO, true);
+		  return 0;
+		}
+		s->columns.fields[f] = field;
+	  }
+	  mysqlc_read_packet(s); // EOF packet
+	  return 1 ;
+  }
+  return 0;
+}
+
+/*
+  mysqlc_get_columns - Get a list of the columns (fields)
+
+  This method returns an instance of the column_names structure
+  that contains an array of fields.
+
+  Note: you should call free_columns_buffer() after consuming
+        the field data to free memory.
+*/
+column_names* mysqlc_get_columns(sqlc_descriptor* d) {
+	u16_t i = 0 ;
+	for (i = 0 ; i < MAX_SQL_CONNECTORS; i++)
+	{
+		if(sqlcd_array[i].sqlc_d == d && sqlcd_array[i].sqlc != NULL)
+			break;
+	}
+	if(i == MAX_SQL_CONNECTORS)
+		return NULL ;
+	struct sql_connector* s = sqlcd_array[i].sqlc;
+	mysqlc_free_columns_buffer(s);
+	mysqlc_free_row_buffer(s);
+	s->num_cols = 0;
+	if (mysqlc_get_fields(s)) {
+		s->columns_read = 1;
+		return &s->columns;
+	}
+	else {
+		return NULL;
+	}
+}
+
+/*
+  mysqlc_get_next_row - Iterator for reading rows from a result set
+
+  This method returns an instance of a structure (row_values)
+  that contains an array of strings representing the row
+  values returned from the server.
+
+  The caller can use the values however needed - by first
+  converting them to a specific type or as a string.
+*/
+row_values* mysqlc_get_next_row(sqlc_descriptor* d) {
+	u16_t i = 0 ;
+	for (i = 0 ; i < MAX_SQL_CONNECTORS; i++)
+	{
+		if(sqlcd_array[i].sqlc_d == d && sqlcd_array[i].sqlc != NULL)
+			break;
+	}
+	if(i == MAX_SQL_CONNECTORS)
+		return NULL ;
+	struct sql_connector* s = sqlcd_array[i].sqlc;
+
+  u16_t res = 0;
+
+  mysqlc_free_row_buffer(s);
+
+  // Read the rows
+  res = mysqlc_get_row_values(s);
+  if (res != MYSQL_EOF_PACKET) {
+    return &s->row;
+  }
+  return NULL;
+}
+
+
 void Encrypt_SHA1_init(struct sql_connector* s) {
   memcpy(s->sha1_state.b,sha1InitState,HASH_LENGTH);
   s->byteCount = 0;
   s->bufferOffset = 0;
 }
-uint32_t Encrypt_SHA1_rol32(uint32_t number, uint8_t bits) {
+u32_t Encrypt_SHA1_rol32(u32_t number, uint8_t bits) {
   return ((number << bits) | (number >> (32-bits)));
 }
 void Encrypt_SHA1_hashBlock(struct sql_connector* s) {
   // SHA1 only for now
   uint8_t i;
-  uint32_t a,b,c,d,e,t;
+  u32_t a,b,c,d,e,t;
 
   a=s->sha1_state.w[0];
   b=s->sha1_state.w[1];
@@ -191,13 +509,13 @@ void Encrypt_SHA1_write(struct sql_connector* s,uint8_t data) {
   Encrypt_SHA1_addUncounted(s,data);
 }
 
-void Encrypt_SHA1_write_arr(struct sql_connector* s,const uint8_t* data, int length) {
-  for (int i=0; i<length; i++) {
+void Encrypt_SHA1_write_arr(struct sql_connector* s,const uint8_t* data, u16_t length) {
+  for (u16_t i=0; i<length; i++) {
 	  Encrypt_SHA1_write(s,data[i]);
   }
 }
 void Encrypt_SHA1_print(struct sql_connector* s,const uint8_t* data){
-	int length = strlen(data);
+	u16_t length = strlen(data);
 	Encrypt_SHA1_write_arr(s,data,length);
 }
 void Encrypt_SHA1_pad(struct sql_connector* s) {
@@ -223,8 +541,8 @@ uint8_t* Encrypt_SHA1_result(struct sql_connector* s) {
 	Encrypt_SHA1_pad(s);
 
   // Swap byte order back
-  for (int i=0; i<5; i++) {
-    uint32_t a,b;
+  for (u16_t i=0; i<5; i++) {
+    u32_t a,b;
     a=s->sha1_state.w[i];
     b=a<<24;
     b|=(a<<8) & 0x00ff0000;
@@ -240,8 +558,8 @@ uint8_t* Encrypt_SHA1_result(struct sql_connector* s) {
 #define HMAC_IPAD 0x36
 #define HMAC_OPAD 0x5c
 
-int sqlc_create( sqlc_descriptor* d ){
-	int i = 0 ;
+u16_t sqlc_create( sqlc_descriptor* d ){
+	u16_t i = 0 ;
 	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
 		if(sqlcd_array[i].sqlc_d == d)
 			return 1 ;
@@ -289,7 +607,7 @@ static err_t sqlc_sendrequest_allocated(struct sql_connector* sqlc_ptr)
 				 goto deallocate_and_leave;
 		 }
 	   } else if (err != ERR_INPROGRESS) {
-		LWIP_DEBUGF(SQLC_DEBUG, ("dns_gethostbyname failed: %d\r\n", (int)err));
+		LWIP_DEBUGF(SQLC_DEBUG, ("dns_gethostbyname failed: %d\r\n", (u16_t)err));
 		goto deallocate_and_leave;
 	  }
 
@@ -305,14 +623,14 @@ leave:
   return err;
 }
 /*
- * hostname  username , password , need to be permenant in memory as long as we
+ * hostname  username , password , need to be permenant in memory as u32_t as we
  * have the connector..
  *
  *
  */
-int sqlc_connect(sqlc_descriptor* d ,const char* hostname ,int port, const char* username ,const char* password )
+u16_t sqlc_connect(sqlc_descriptor* d ,const char* hostname ,u16_t port, const char* username ,const char* password )
 {
-	int i = 0 ;
+	u16_t i = 0 ;
 	for (i = 0 ; i < MAX_SQL_CONNECTORS; i++)
 	{
 		if(sqlcd_array[i].sqlc_d == d && sqlcd_array[i].sqlc != NULL)
@@ -335,9 +653,9 @@ int sqlc_connect(sqlc_descriptor* d ,const char* hostname ,int port, const char*
 	sqlc_ptr->es = CONNECTOR_ERROR_OK;
 	return 0 ;
 }
-int sqlc_disconnect(sqlc_descriptor*d)
+u16_t sqlc_disconnect(sqlc_descriptor*d)
 {
-	int i = 0 ;
+	u16_t i = 0 ;
 	for (i = 0 ; i < MAX_SQL_CONNECTORS; i++)
 	{
 		if(sqlcd_array[i].sqlc_d == d && sqlcd_array[i].sqlc != NULL)
@@ -367,9 +685,9 @@ int sqlc_disconnect(sqlc_descriptor*d)
  * you can't delete a connected or not IDLE connector
  * */
 
-int sqlc_delete(sqlc_descriptor*d)
+u16_t sqlc_delete(sqlc_descriptor*d)
 {
-	int i = 0 ;
+	u16_t i = 0 ;
 	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
 		if(sqlcd_array[i].sqlc_d == d)
 			break;
@@ -383,9 +701,9 @@ int sqlc_delete(sqlc_descriptor*d)
 	sqlcd_array[i].sqlc_d = NULL;
 	return 0 ;
 }
-int sqlc_get_state(sqlc_descriptor*d,enum state* state)
+u16_t sqlc_get_state(sqlc_descriptor*d,enum state* state)
 {
-	int i ;
+	u16_t i ;
 	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
 		if(sqlcd_array[i].sqlc_d == d)
 			break;
@@ -395,9 +713,9 @@ int sqlc_get_state(sqlc_descriptor*d,enum state* state)
 	*state = sqlcd_array[i].sqlc->connector_state;
 	return 0 ;
 }
-int sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es)
+u16_t sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es)
 {
-	int i ;
+	u16_t i ;
 	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
 		if(sqlcd_array[i].sqlc_d == d)
 			break;
@@ -407,9 +725,9 @@ int sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es)
 	*es = sqlcd_array[i].sqlc->es;
 	return 0 ;
 }
-int sqlc_is_connected(sqlc_descriptor*d, char* connected)
+u16_t sqlc_is_connected(sqlc_descriptor*d, char* connected)
 {
-	int i ;
+	u16_t i ;
 	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
 		if(sqlcd_array[i].sqlc_d == d)
 			break;
@@ -419,8 +737,8 @@ int sqlc_is_connected(sqlc_descriptor*d, char* connected)
 	*connected = sqlcd_array[i].sqlc->connected;
 	return 0 ;
 }
-int sqlc_execute(sqlc_descriptor*d,const char* query){
-	int i ;
+u16_t sqlc_execute(sqlc_descriptor*d,const char* query){
+	u16_t i ;
 	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
 		if(sqlcd_array[i].sqlc_d == d)
 			break;
@@ -433,11 +751,17 @@ int sqlc_execute(sqlc_descriptor*d,const char* query){
 		return 1 ;
 	if(s->connector_state != CONNECTOR_STATE_IDLE && s->connector_state != CONNECTOR_STATE_CONNECTOR_ERROR)
 		return 1;
-
-	int query_len = strlen(query);
+	if(s->p){
+		pbuf_free(s->p);
+		s->p = NULL;
+		s->p_index = 0 ;
+	}
+	u16_t query_len = strlen(query);
 	s->payload  = (char*) mem_malloc( query_len + 5 );
 	if(!s->payload)
 		return 1 ;
+	mysqlc_free_columns_buffer(s);
+	mysqlc_free_row_buffer(s);
 	memcpy(&s->payload[5], query,query_len);
 	store_int(&s->payload[0], query_len+1, 3);
 	s->payload[3] = 0x00;
@@ -471,11 +795,10 @@ void sqlc_err(void *arg, err_t err)
 		 s->state = SQLC_CLOSED;
 	 }else if (s->connected){
 		 s->connected = 0 ;
-		 s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
-		 s->es = CONNECTOR_ERROR_TCP_ERROR;
-		 s->state = SQLC_CLOSED;
 	 }
-
+	 s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
+	 s->es = CONNECTOR_ERROR_TCP_ERROR;
+	 s->state = SQLC_CLOSED;
 	 //@ TODO handle other events , basically we check the connector state and the session state...
 	 sqlc_cleanup(s);
 
@@ -524,7 +847,8 @@ sqlc_cleanup(struct sql_connector *s)
 	LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_cleanup()\r\n"));
 	if(s->pcb){
 		/* try to clean up the pcb if not already deallocated*/
-		sqlc_close(s);
+		//sqlc_close(s);
+		s->pcb = NULL;
 	}
 	if(s->payload){
 		mem_free(s->payload);
@@ -534,10 +858,17 @@ sqlc_cleanup(struct sql_connector *s)
 		mem_free(s->server_version);
 		s->server_version = NULL;
 	}
+	mysqlc_free_columns_buffer(s);
+	mysqlc_free_row_buffer(s);
+	if(s->p){
+		pbuf_free(s->p);
+		s->p = NULL;
+		s->p_index = 0 ;
+	}
 }
 
 /** Try to close a pcb and free the arg if successful */
-static int
+static u16_t
 sqlc_close(struct sql_connector *s)
 {
 	LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_close()\r\n"));
@@ -564,21 +895,21 @@ sqlc_close(struct sql_connector *s)
 
 void parse_handshake_packet(struct sql_connector* s,struct pbuf *p)
 {
-	int len = strlen(&(((char*)p->payload)[5]));
+	u16_t len = strlen(&(((char*)p->payload)[5]));
 	s->server_version = (char*)mem_malloc(len + 1);
 	if(s->server_version)
 		strcpy(s->server_version,&(((char*)p->payload)[5]));
-	int seed_index = len + 6  + 4;
-	for(int i = 0 ; i < 8 ; i++)
+	u16_t seed_index = len + 6  + 4;
+	for(u16_t i = 0 ; i < 8 ; i++)
 		s->seed[i] = ((char*)p->payload)[seed_index + i ];
 	seed_index += 27 ;
-	for(int i = 0 ; i < 12 ; i++)
+	for(u16_t i = 0 ; i < 12 ; i++)
 	{
 		s->seed[i + 8] = ((char*)p->payload)[seed_index + i ];
 	}
 }
 err_t sqlc_send(struct tcp_pcb *pcb,struct sql_connector* s){
-	int len ;
+	u16_t len ;
 	err_t ret_code = ERR_OK,err = ERR_OK;
 	len=s->payload_len - s->payload_sent;
 	if(len > tcp_sndbuf(pcb)){
@@ -627,7 +958,7 @@ char scramble_password(struct sql_connector* s,const char* password , char* pwd_
 	  memcpy(hash3, digest, 20);
 
 	  // XOR for hash4
-	  for (int i = 0; i < 20; i++)
+	  for (u16_t i = 0; i < 20; i++)
 	    pwd_hash[i] = hash1[i] ^ hash3[i];
 
 	  return 1;
@@ -644,7 +975,7 @@ char scramble_password(struct sql_connector* s,const char* password , char* pwd_
   value[in]       integer value to be stored
   size[in]        number of bytes to use to store the integer
 */
-void store_int(char *buff, long value, int size) {
+void store_int(char *buff, u32_t value, u16_t size) {
   memset(buff, 0, size);
   if (value < 0xff)
     buff[0] = (char)value;
@@ -667,7 +998,7 @@ err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb,c
 {
 	s->payload = (char*) mem_malloc(256);
 	if(s){
-	  int size_send = 4;
+	  u16_t size_send = 4;
 	  err_t err = ERR_OK;
 	  // client flags
 	  s->payload[size_send] = 0x85;
@@ -686,7 +1017,7 @@ err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb,c
 	  // charset - default is 8
 	  s->payload[size_send] = 0x08;
 	  size_send += 1;
-	  for(int i = 0; i < 24; i++)
+	  for(u16_t i = 0; i < 24; i++)
 	    s->payload[size_send+i] = 0x00;
 	  size_send += 23;
 
@@ -700,7 +1031,7 @@ err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb,c
 	   if (scramble_password(s,password, scramble)) {
 	     s->payload[size_send] = 0x14;
 	     size_send += 1;
-	     for (int i = 0; i < 20; i++)
+	     for (u16_t i = 0; i < 20; i++)
 	       s->payload[i+size_send] = scramble[i];
 	     size_send += 20;
 	     s->payload[size_send] = 0x00;
@@ -714,7 +1045,7 @@ err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb,c
 	   size_send += 1;
 	   s->payload_len = size_send;
 	   // Write packet size
-	   int p_size = size_send - 4;
+	   u16_t p_size = size_send - 4;
 	   store_int(&s->payload[0], p_size, 3);
 	   s->payload[3] = 0x01;
 	   err = sqlc_send(pcb, s);
@@ -732,8 +1063,8 @@ err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb,c
 
   Returns integer - number of bytes integer consumes
 */
-int get_lcb_len(char* buffer,int offset) {
-  int read_len = buffer[offset];
+u16_t get_lcb_len(char* buffer,u16_t offset) {
+  u16_t read_len = buffer[offset];
   if (read_len > 250) {
     // read type:
     char type = buffer[offset+1];
@@ -758,25 +1089,41 @@ int get_lcb_len(char* buffer,int offset) {
 
   Returns integer - integer from the buffer
 */
-int read_int(char* buffer,int offset, int size) {
-  int value = 0;
-  int new_size = 0;
+u16_t read_int(char* buffer,u16_t offset, u16_t size) {
+  u16_t value = 0;
+  u16_t new_size = 0;
   if (size == 0)
      new_size = get_lcb_len(buffer,offset);
   if (size == 1)
      return buffer[offset];
   new_size = size;
-  int shifter = (new_size - 1) * 8;
-  for (int i = new_size; i > 0; i--) {
+  u16_t shifter = (new_size - 1) * 8;
+  for (u16_t i = new_size; i > 0; i--) {
     value += (char)(buffer[i-1] << shifter);
     shifter -= 8;
   }
   return value;
 }
+/*
+  check_ok_packet - Decipher an Ok packet from the server.
 
-int check_ok_packet(char* buffer) {
+  This method attempts to parse an Ok packet. If the packet is not an
+  Ok, packet, it returns the packet type.
+
+   Bytes                       Name
+   -----                       ----
+   1   (Length Coded Binary)   field_count, always = 0
+   1-9 (Length Coded Binary)   affected_rows
+   1-9 (Length Coded Binary)   insert_id
+   2                           server_status
+   2                           warning_count
+   n   (until end of packet)   message
+
+  Returns integer - 0 = successful parse, packet type if not an Ok packet
+*/
+u16_t check_ok_packet(char* buffer) {
 	if(buffer != NULL){
-	  int type = buffer[4];
+	  u16_t type = buffer[4];
 	  if (type != MYSQL_OK_PACKET)
 		return type;
 	  return 0;
@@ -802,16 +1149,17 @@ int check_ok_packet(char* buffer) {
   5                           sqlstate (5 characters)
   n                           message
 */
-void parse_error_packet(char* buffer,int packet_len) {
+void parse_error_packet(char* buffer,u16_t packet_len) {
   LWIP_DEBUGF(SQLC_DEBUG,("Error: "));
   LWIP_DEBUGF(SQLC_DEBUG,("%d",read_int(buffer,5, 2)));
   LWIP_DEBUGF(SQLC_DEBUG,(" = "));
-  for (int i = 0; i < packet_len-9; i++)
+  for (u16_t i = 0; i < packet_len-9; i++)
 	  LWIP_DEBUGF(SQLC_DEBUG,("%c",(char)buffer[i+13]));
   LWIP_DEBUGF(SQLC_DEBUG,("."));
 }
 
-err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
+err_t
+sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
      err_t ret_code = ERR_OK;
      struct sql_connector* s = arg;
@@ -819,7 +1167,7 @@ err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 	 if(p != NULL)
 	 {
 		 struct pbuf *q;
-		 int i =0;
+		 u16_t i =0;
 		 /* received data */
 		 if (s->p == NULL) {
 				s->p = p;
@@ -828,7 +1176,7 @@ err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 		 }
 		 if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == SQLC_CONNECTED){
 			 if(p->tot_len > 4){
-				 unsigned long packet_length = ((char*)p->payload)[0];
+				 u32_t packet_length = ((char*)p->payload)[0];
 				 packet_length += ((char*)p->payload)[1]<<8;
 				 packet_length += ((char*)p->payload)[2]<<16;
 				 if(p->tot_len >= packet_length + 4){
@@ -849,7 +1197,7 @@ err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 			 }
 		 }else if (s->connector_state == CONNECTOR_STATE_CONNECTING && (s->state == SQLC_RECV || s->state == SQLC_SENT)){
 			 if(p->tot_len > 4){
-				 unsigned long packet_length = ((char*)p->payload)[0];
+				 u32_t packet_length = ((char*)p->payload)[0];
 				 packet_length += ((char*)p->payload)[1]<<8;
 				 packet_length += ((char*)p->payload)[2]<<16;
 				 if(p->tot_len >= packet_length + 4){
@@ -877,7 +1225,7 @@ err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 			 }
 		 }else if (s->connector_state == CONNECTOR_STATE_SENDING){
 			 if(p->tot_len > 4){
-				 unsigned long packet_length = ((char*)p->payload)[0];
+				 u32_t packet_length = ((char*)p->payload)[0];
 				 packet_length += ((char*)p->payload)[1]<<8;
 				 packet_length += ((char*)p->payload)[2]<<16;
 				 if(p->tot_len >= packet_length + 4){
@@ -894,14 +1242,14 @@ err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 							s->es = CONNECTOR_ERROR_OK;
 					    }
 						 tcp_recved(pcb, p->tot_len);
-					     pbuf_free(p);
-					     s->p = NULL;
+//					     pbuf_free(p);
+//					     s->p = NULL;
 				 }
 			 }
 
 		 }else{
 			 tcp_recved(pcb, p->tot_len);
-		     pbuf_free(p);
+		     //pbuf_free(p);
 		 }
 	     s->state = SQLC_RECV;
 	 }

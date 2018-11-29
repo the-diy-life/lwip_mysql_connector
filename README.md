@@ -5,5 +5,6 @@ link: https://github.com/ChuckBell/MySQL_Connector_Arduino
 
 ## Sponsored by
 
-<div style="width:20%">[![the DIY Life](http://the-diy-life.co/images/logo_diylife.jpg)](http://www.the-diy-life.co)</div>
-
+<a href = "https://the-diy-life.co">
+<img src="https://the-diy-life.co/images/logo_diylife.jpg"  width="248" height="248">
+</a>

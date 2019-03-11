@@ -1,3 +1,9 @@
+/**
+ * @file
+ * LWIP MySQL Connector implementation
+ * @mainpage Overview
+ * @verbinclude "README.md"
+ */
 /*
  sql_connector.c
  Copyright (c) 2017 DIY Life. All rights reserved.
@@ -15,9 +21,26 @@
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
   Created on: Aug 21, 2017
-       Author: Amr Elsayed
+       Author: Amr Elsayed (amr.elsayed@the-diy-life.co)
  */
 
+/**
+ * @defgroup mysql_connector MySQL Connector
+ * 
+ * this is a mysql client built over lwip raw api's, currently implemented functions are 
+ * INSERT,SELECT. We are working on testing and implementing more mysql functions. the connector 
+ * is tested with mysql version 5.5 and also with xampp which uses mariadb version 10.1.19 which a fork of mysql.
+ * using the examples on the examples folder you can test all functions including connect,insert and select.
+ * 
+ * @author Amr Elsayed  (amr.elsayed@the-diy-life.co)
+ * 
+ * @version 0.1
+ * 
+ * @date 11-03-2019
+ * 
+ * @copyright GNU Public license version 2
+ * 
+ */
 #include "lwip/tcp.h"
 #include "lwip/raw.h"
 
@@ -41,11 +64,17 @@
 #include "sql_connector.h"
 #include <string.h>
 
-
-#define SQLC_POLL_INTERVAL 4   //  4 * 0.5 SEC.
+/**
+ * specify the frequency for calling the tcp configured poll function 
+ * 
+*/
+#define SQLC_POLL_INTERVAL 4   ///<  4 * 0.5 SEC.
+/**
+ * specify the number of times the poll function is called before closing the connection. 
+ * 
+*/
 #define SQLC_TIMEOUT 4// * 60 * (sqlc_poll_INTERVAL / 2) // two minutes.
 
-#define HTTP_MAX_REQUEST_LENGTH 1024
 #ifndef SQLC_DEFAULT_PORT
 #define SQLC_DEFAULT_PORT 3306
 #endif
@@ -386,14 +415,14 @@ char mysqlc_get_fields(struct sql_connector* s)
   return 0;
 }
 
-/*
-  mysqlc_get_columns - Get a list of the columns (fields)
-
-  This method returns an instance of the column_names structure
-  that contains an array of fields.
-
-  Note: you should call free_columns_buffer() after consuming
-        the field data to free memory.
+/**
+ * @brief after sending a select command successfully ,the server send back the selected table, this function get a list * of the columns (fields)
+ *
+ * @param d: pointer to a mysql connector descriptor provided to get the connector returned table columns. 
+ * @return column_names: pointer to an instance of the column_names structure
+ * that contains an array of fields.\n
+ *         NULL: error happened (either the descriptor is not connected to a mysql connector or the server hasn't given back data (no fields associated with this connector found)).
+ *
 */
 column_names* mysqlc_get_columns(sqlc_descriptor* d) {
 	u16_t i = 0 ;
@@ -417,15 +446,16 @@ column_names* mysqlc_get_columns(sqlc_descriptor* d) {
 	}
 }
 
-/*
-  mysqlc_get_next_row - Iterator for reading rows from a result set
-
-  This method returns an instance of a structure (row_values)
-  that contains an array of strings representing the row
-  values returned from the server.
-
-  The caller can use the values however needed - by first
-  converting them to a specific type or as a string.
+/**
+ * @brief Iterator for reading rows from a result set
+ *
+ * @param d: pointer to a mysql connector descriptor provided to get the connector returned table next row. 
+ * @return row_values: an instance of a structure (row_values)
+ * that contains an array of strings representing the row
+ * values returned from the server.
+ * The caller can use the values however needed - by first
+ * converting them to a specific type or as a string.\n
+ *         NULL: error happened (either the descriptor is not connected to a mysql connector or the server hasn't given back data (no rows associated with this connector found or empty table)).
 */
 row_values* mysqlc_get_next_row(sqlc_descriptor* d) {
 	u16_t i = 0 ;
@@ -557,7 +587,17 @@ uint8_t* Encrypt_SHA1_result(struct sql_connector* s) {
 
 #define HMAC_IPAD 0x36
 #define HMAC_OPAD 0x5c
-
+/**
+ * @brief Create a mysql connector structure and 
+ * link it to the provided descriptor.
+ * 
+ * @param d: pointer to a mysql connector descriptor structure provided by the application
+ * 
+ * @return 0: No errors and the connector structure is created successfully.\n
+ * 				 1: error creating the connector structure (either exceeded MAX_SQL_CONNECTORS,\n
+ * the descriptor is already linked to another connector or memory allocation for the connector structure failed).
+ * 
+ */
 u16_t sqlc_create( sqlc_descriptor* d ){
 	u16_t i = 0 ;
 	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
@@ -600,16 +640,16 @@ static err_t sqlc_sendrequest_allocated(struct sql_connector* sqlc_ptr)
 	 sqlc_ptr->remote_ipaddr.addr = ipaddr_addr(sqlc_ptr->hostname);
 	 err = sqlc_ptr->remote_ipaddr.addr == IPADDR_NONE ? ERR_ARG : ERR_OK;
 	 if(err == ERR_OK){
-		 ret_code = tcp_connect(pcb, &sqlc_ptr->remote_ipaddr, sqlc_ptr->port, sqlc_connected);
+	   ret_code = tcp_connect(pcb, &sqlc_ptr->remote_ipaddr, sqlc_ptr->port, sqlc_connected);
 		 if(ERR_OK != ret_code)
 		 {
 				 LWIP_DEBUGF(SQLC_DEBUG, ("tcp_connect():no memory is available for enqueueing the SYN segment %d\n\r",ret_code));
 				 goto deallocate_and_leave;
 		 }
-	   } else if (err != ERR_INPROGRESS) {
-		LWIP_DEBUGF(SQLC_DEBUG, ("dns_gethostbyname failed: %d\r\n", (u16_t)err));
-		goto deallocate_and_leave;
-	  }
+	 }else if (err != ERR_INPROGRESS) {
+		  LWIP_DEBUGF(SQLC_DEBUG, ("dns_gethostbyname failed: %d\r\n", (u16_t)err));
+		  goto deallocate_and_leave;
+	 }
 
   return ERR_OK;
 deallocate_and_leave:
@@ -622,10 +662,22 @@ leave:
   /* no need to call the callback here since we return != ERR_OK */
   return err;
 }
-/*
- * hostname  username , password , need to be permenant in memory as u32_t as we
- * have the connector..
- *
+/**
+ * @brief upon creating a mysqlc_descriptor using mysqlc_create, mysqlc_connect initiate a\n
+ * connection with a server.
+ * @param d: pointer to mysql connector already created descriptor
+ * @param hostname: ipaddress for the mysql server ( currently a domain name is not implemented).\n
+ * it needs to be permenant in memory as a global variable for example.
+ * @param port: mysql server port number.
+ * @param username: mysql server user credentials - username \n
+ * it needs to be permenant in memory as a global variable for example.
+ * @param password: mysql server user credentials - password \n
+ * it needs to be permenant in memory as a global variable for example.
+ * 
+ * @return 0: no error yet and the connector (client) is trying to connect to the server.
+ * @return 1: error on trying to connect to the server.\n
+ * (either the descriptor is not connected to a connector , or memory allocation failure for creating a PCB or
+ * a connection).
  *
  */
 u16_t sqlc_connect(sqlc_descriptor* d ,const char* hostname ,u16_t port, const char* username ,const char* password )
@@ -681,8 +733,13 @@ u16_t sqlc_disconnect(sqlc_descriptor*d)
 	}
 	return 1 ;
 }
-/*
- * you can't delete a connected or not IDLE connector
+/**
+ * @brief Deletes the mysql connector structure linked to the provided descriptor.\n
+ * Cleans up after working with the connector , this is essential to avoid memory fault issues.
+ * @warning You can't delete a connected or a none IDLE connector.
+ * @param d: pointer to mysql connector descriptor linked to the structure needed to be deleted.
+ * @return 0 : the mysql connector structure is deleted (freed) successfully.\n
+ *         1 : error deleting the mysql connector (either the descriptor is not related to any connection ,the connector needed to be deleted is already connected to the server or trying to connect to the server).
  * */
 
 u16_t sqlc_delete(sqlc_descriptor*d)
@@ -701,6 +758,21 @@ u16_t sqlc_delete(sqlc_descriptor*d)
 	sqlcd_array[i].sqlc_d = NULL;
 	return 0 ;
 }
+/**
+ * @brief Provides the mysql connector linked to the provided descriptor state.\n
+ *            CONNECTOR_STATE_IDLE (the connector is idle (neither try to connect or connected to a server).\n
+ *            CONNECTOR_STATE_CONNECTING (the connector is trying to connect to the server).\n
+ *            CONNECTOR_STATE_SENDING (the connecter is connected to the server and trying to send data).\n
+ *            CONNECTOR_STATE_SENDING_DONE (the connector has send data successfully to the server). \n
+ *            CONNECTOR_STATE_CONNECTOR_ERROR (the connector has an error while trying to connect or send data to the server).\n
+ * 
+ * @param d the mysql connector descriptor linked to the connector needed to provide it's state
+ * @param state a pointer to state enum variable to be filled with the connector state.
+ * 
+ * @return 0: no errors , the state is updated successfully.\n
+ *         1: error, the descriptor provided is not linked to any connector.
+ * 
+ */
 u16_t sqlc_get_state(sqlc_descriptor*d,enum state* state)
 {
 	u16_t i ;
@@ -725,6 +797,14 @@ u16_t sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es)
 	*es = sqlcd_array[i].sqlc->es;
 	return 0 ;
 }
+/**
+ * @brief Check the mysql connector linked to the provided descriptor linked if is connected to a server.
+ * @param d: pointer to mysql connector descriptor linked to the connector needed to check it's connection.
+ * @param connected: pointer to a byte variable to put the connection state on (1:connected ,0:not connected).
+ * @return 0: connection state is updated successfully.\n
+ *         1: Error providing the connection status (the descriptor is not linked to any connector)
+ * 
+ */
 u16_t sqlc_is_connected(sqlc_descriptor*d, char* connected)
 {
 	u16_t i ;
@@ -737,6 +817,17 @@ u16_t sqlc_is_connected(sqlc_descriptor*d, char* connected)
 	*connected = sqlcd_array[i].sqlc->connected;
 	return 0 ;
 }
+/**
+ * @brief Connection with the server should be already stablised,then calling this function sends the commands\n
+ * provided in the query character array.
+ * 
+ * @param d: pointer to mysql connector descriptor linked to the mysql connector to send the query on.
+ * @param query: a character array containing the mysql commands.
+ * @return: 0: no errors , and the lwip is trying to send your commands to the server (check the connector state sqlc_get_state()).\n
+ *         1: error while trying to send the commands (either the descriptor is not linked to a mysql connector, the connected linked to the provided descriptor is not connected to a server, the connector state is not IDLE, memory allocation for query buffer failed ,or lwip state error (check sqlc_send())).
+ * 
+ * 
+ */
 u16_t sqlc_execute(sqlc_descriptor*d,const char* query){
 	u16_t i ;
 	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
@@ -1270,28 +1361,28 @@ err_t sqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
 {
 	struct sql_connector * s = arg;
 	LWIP_DEBUGF(SQLC_DEBUG,("sqlc_sent:Done Sending to client : %d",len));
-    LWIP_DEBUGF(SQLC_DEBUG,("\n\r"));
-    if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == SQLC_RECV){
+	LWIP_DEBUGF(SQLC_DEBUG,("\n\r"));
+	if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == SQLC_RECV){
 
-    	s->timer = SQLC_TIMEOUT;
-    }else if (s->connector_state == CONNECTOR_STATE_SENDING){
-    	s->timer = SQLC_TIMEOUT;
-    }
-    s->payload_sent +=len;
-    if(s->payload && s->payload_len - s->payload_sent)
-    {
-    	sqlc_send(pcb,s);
-    }
-    else
-    {
-    	s->state = SQLC_SENT;
+		s->timer = SQLC_TIMEOUT;
+	}else if (s->connector_state == CONNECTOR_STATE_SENDING){
+		s->timer = SQLC_TIMEOUT;
+	}
+	s->payload_sent +=len;
+	if(s->payload && s->payload_len - s->payload_sent)
+	{
+		sqlc_send(pcb,s);
+	}
+	else
+	{
+		s->state = SQLC_SENT;
 
-    	if (s->payload && !(s->payload_len - s->payload_sent)){
-			mem_free(s->payload);
-			s->payload = NULL;
-			s->payload_sent = 0;
-    	}
-    }
+		if (s->payload && !(s->payload_len - s->payload_sent)){
+		mem_free(s->payload);
+		s->payload = NULL;
+		s->payload_sent = 0;
+		}
+	}
   return ERR_OK;
 }
 

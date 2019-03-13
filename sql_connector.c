@@ -75,15 +75,20 @@
 */
 #define SQLC_TIMEOUT 4// * 60 * (sqlc_poll_INTERVAL / 2) // two minutes.
 
+/** Standard SQLC port - you can use custom port for you application instead using the API's */
 #ifndef SQLC_DEFAULT_PORT
 #define SQLC_DEFAULT_PORT 3306
 #endif
+
+/** the Debuggers is ON by Default*/
 #ifdef SQLC_DEBUG
 #undef SQLCC_DEBUG
 #endif
 #define SQLC_DEBUG         LWIP_DBG_ON
 
-
+/**
+ * the lifecycle for the mysql connector PCB along a connection. 
+*/
 enum sqlc_session_state{
 	SQLC_NEW = 0,
 	SQLC_CONNECTED,
@@ -91,6 +96,8 @@ enum sqlc_session_state{
 	SQLC_SENT,
 	SQLC_CLOSED
 };
+
+
 #define HASH_LENGTH 20
 #define BLOCK_LENGTH 64
 
@@ -115,47 +122,101 @@ const u8_t sha1InitState[] = {
   0x76,0x54,0x32,0x10, // H3
   0xf0,0xe1,0xd2,0xc3  // H4
 };
+
+/**
+ * MySQL connector Stucture created once per a connection attempt.
+ * contains the connection status, the PCB status, MySQL server information,
+ * encryption data, MySQL sent payload (queries), MySQL specific variables for parsing MySQL table. 
+ */
 struct sql_connector{
+	/** client connection state (0: not connected, 1: connected) */
 	char connected;
+	/** client error state, to trace if an error is occured during a connection attempt, this emum need to be watched.*/
 	enum error_state es;
+	/** mysql connector state specify the it's state weither it's IDLE ready for a new connection, is trying to connect to a server, is trying to send data to a server, sent data to the server already, or has an error during one of its attempts.*/
 	enum state connector_state;
 	/** keeping the state of the SQL Client session */
-	enum sqlc_session_state state;
+	enum sqlc_session_state state; ///<
+	/** 
+	 * Pointer to constant character string for the server name.
+	 * @warning currenty only supports the Server IP address as a string e.g "192.168.1.172"
+	 * @todo add Domain name support.
+	*/
 	const char* hostname;
+	/** MySQL client credentials: username*/
 	const char* username;
+	/** MySQL client credentials: password*/
 	const char* password;
+	/** MySQL sever opened port (the standard one or custom*/
 	u16_t port;
+	/** Server translated IP address from the hostname */
 	ip_addr_t remote_ipaddr;
-	  /** timeout handling, if this reaches 0, the connection is closed */
-    u16_t  timer;
-    struct tcp_pcb *pcb;
-    struct pbuf* p;
-    u16_t p_index;
-    /** this is the body of the payload to be sent */
-    char* payload;
-    /** this is the length of the body to be sent */
-    u16_t payload_len;
-    /** amount of data from body already sent */
-    u16_t payload_sent;
-    char* server_version;
+	/** timeout handling, if this reaches 0, the connection is closed */
+	u16_t  timer;
+	
+	/** the TCP PCB used for the client connection */
+	struct tcp_pcb *pcb;
+	/** pointer to the received LWIP structured buffer - reading buffer*/
+	struct pbuf* p;
+	/** index at which we will start to read data - if p_index is zero, so no data is read yet from the buffer, if p_index is positive means the data on indexes before that index is already read.*/
+	u16_t p_index;
+	/** this is the body of the payload to be sent */
+	char* payload;
+	/** this is the length of the body to be sent */
+	u16_t payload_len;
+	/** amount of data from body already sent */
+	u16_t payload_sent;
 
-    union _sha1_buffer sha1_buffer;
-    u8_t bufferOffset;
-    union _sha1_state sha1_state;
-    u32_t byteCount;
-    u8_t keyBuffer[BLOCK_LENGTH];
-    u8_t innerHash[HASH_LENGTH];
-    char seed[20];
 
-    u16_t num_cols;
-    column_names columns;
-    row_values row;
-    char columns_read;
+	/** server MySQL version - currently used for debuging - parsed during handshake */
+	char* server_version;
+
+
+	/** */
+	union _sha1_buffer sha1_buffer;
+	/** */
+	u8_t bufferOffset;
+	/** */
+	union _sha1_state sha1_state;
+	/** */
+	u32_t byteCount;
+	/** */
+	u8_t keyBuffer[BLOCK_LENGTH];
+	/** */
+	u8_t innerHash[HASH_LENGTH];
+	/** */
+	char seed[20];
+	/** */
+	u16_t num_cols;
+
+	/* MySQL table specific data */
+
+	/** MySQL table columns data  */
+	column_names columns;
+	/** MySQL table rows data */
+	row_values row;
+	/** Reading MySQL tables is done column by column, columns_read is kind of index for the yet read columns from the MySQL table  */
+	char columns_read;
 };
+/**
+ * sql_cd is a structure wraps up a single mysql connector (client).
+ * This implementation for LWIP MySQL connector follows a sockets like convention, each connector has it's own
+ * descriptor which is an integer representing an ID for the connector and the user application can trace it's connector
+ *  status and send commands using this descriptor (ID). 
+*/
 struct sql_cd{
+	/** The descriptor (ID) for a MySQL connector */
 	sqlc_descriptor* sqlc_d;
+	/** pointer to an allocated MySQL connector structure */
 	struct sql_connector* sqlc;
 };
+
+/** 
+ * Array of sqlc_d structure for a fixed number of MySQL connectors(clients) 
+ * the number of used MySQL connectors by the application is meant to be fixed,
+ * and is specified by the MAX_SQL_CONNECTORS, this is useful for a low memory controllers to 
+ * limit number of connection made by the application at the same time.
+*/
 static struct sql_cd sqlcd_array[MAX_SQL_CONNECTORS];
 
 err_t sqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len);
@@ -192,7 +253,6 @@ char * mysqlc_read_string(struct sql_connector* s,u16_t *offset) {
 }
 /*
  * this function is just moving the pointer to the next packet...
- *
  *
  */
 u16_t mysqlc_read_packet(struct sql_connector* s){

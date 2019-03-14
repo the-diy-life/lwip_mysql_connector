@@ -49,12 +49,6 @@
 /** No Enough Memory for TCP_WRITE */
 #define SQLC_TCP_MEM_ERR          8
 
-
-enum http_method
-{
-	GET,
-	POST
-};
 enum error_state {
 	CONNECTOR_ERROR_OK,
 	CONNECTOR_ERROR_NOT_CONNECTED,

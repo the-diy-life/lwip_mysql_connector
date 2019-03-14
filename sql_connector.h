@@ -23,11 +23,17 @@
 
 #include "lwip/err.h"
 
-
+///@{
+/** 
+ * mySQL packet types. \n
+ *            MYSQL_OK_PACKET   : mySQL OK packet.\n
+ *            MYSQL_EOF_PACKET  : mySQL END OF FRAME Packet.\n
+ *            MYSQL_ERROR_PACKET: mySQL ERROR packet.\n
+*/
 #define MYSQL_OK_PACKET     0x00
 #define MYSQL_EOF_PACKET    0xfe
 #define MYSQL_ERROR_PACKET  0xff
-
+///@}
 
 
 /** Request successfully got */
@@ -49,49 +55,98 @@
 /** No Enough Memory for TCP_WRITE */
 #define SQLC_TCP_MEM_ERR          8
 
+/**
+ * when mySQL Connector state is CONNECTOR_STATE_CONNECTOR_ERROR.\n
+ * this enum show's the type of ERROR happenned.\n
+ * Default is CONNECTOR_ERROR_OK.\n
+ * 
+*/
+
 enum error_state {
+  /** No error. */
 	CONNECTOR_ERROR_OK,
+  /** Attempt to send packets\n
+ * on a none connected mySQL Connector.*/
 	CONNECTOR_ERROR_NOT_CONNECTED,
+  /** the Connection with the server is closed non gracefully. */
 	CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION,
+  /** internal LWIP Stack error. */
 	CONNECTOR_ERROR_TCP_ERROR,
+  /** cannot connect to the server.*/
 	CONNECTOR_ERROR_CANNOT_CONNECT,
+  /** error while trying to send data to the server ( connection were successful ).*/
 	CONNECTOR_ERROR_SENDING,
-	// So on...
 };
-/*
- * those states are with respect to SQL
- * not with respect to the Raw API
+
+/**
+ * mySQL Connector (client) states\n
+ * 
+ * @note those states are with respect to mySQL
+ * not the Raw API's
  *
  */
 enum state {
+  /** MySQL Connector is IDLE, is not trying to connect or send data to a server.*/
 	CONNECTOR_STATE_IDLE,
+  /** MySQL Connector is trying to connect to a server.*/
 	CONNECTOR_STATE_CONNECTING,
+  /** MySQL Connector is trying to send data to a server.*/
 	CONNECTOR_STATE_SENDING,
+  /** MySQL Connector sent data to the server.*/
 	CONNECTOR_STATE_SENDING_DONE,
+  /** MySQL connector has an error while a session attempt, check the connector error state to know the type of error.*/
 	CONNECTOR_STATE_CONNECTOR_ERROR
 };
+/** 
+ * Maximum number of mySQL fields(columns).\n
+ *  Reduce to save memory.\n
+ *  Default=32. 
+ * 
+ * @warning it's expected the client knows the max number of columns on the table it tries to retrieve. and the client attempts will fail if it tried to retriev bigger tables.
+ */
+#define MAX_FIELDS    0x20
 
-#define MAX_FIELDS    0x20   // Maximum number of fields. Reduce to save memory. Default=32
-
-// Structure for retrieving a field (minimal implementation).
+/** 
+ * Structure for retrieving a mySQL table field (minimal implementation).\n
+ */
 typedef struct {
+  /** pointer to database name string in the MYSQL Frame. */
   char *db;
+  /** pointer to database table name string in the MYSQL Frame. */
   char *table;
+  /** pointer to field (column) name. */
   char *name;
 } field_struct;
 
-// Structure for storing result set metadata.
+/**
+ *  Structure for storing mySQL Query result set metadata.\n
+ *
+ **/
 typedef struct {
-  u16_t num_fields;     // actual number of fields
+  /** actual number of fields.*/
+  u16_t num_fields;
+  /** array of pointers to each field(column) structure, note that max number of fields is fixed,to save memory and help working on small memory controllers.*/
   field_struct *fields[MAX_FIELDS];
 } column_names;
 
-// Structure for storing row data.
+/** 
+ * Structure for storing each row data in a mySQL table.\n
+ */
 typedef struct {
+  /** Pointer a array of row value strings, limited by MAX_FIELDS obviously.*/
   char *values[MAX_FIELDS];
 } row_values;
 
+/**
+ *  This implementation for LWIP MySQL connector follows a sockets like 
+ *  convention, each connector has it's own
+ *  descriptor which is an integer representing an ID for the connector and the 
+ *  user application can track it's connector
+ *  status and send commands using this descriptor (ID).
+ **/
 typedef u16_t sqlc_descriptor;
+
+/** limits number of simultanous connections made by the application. */
 #define MAX_SQL_CONNECTORS 10
 
 u16_t sqlc_create( sqlc_descriptor* d );
@@ -101,9 +156,9 @@ u16_t sqlc_delete(sqlc_descriptor*d);
 u16_t sqlc_get_state(sqlc_descriptor*d,enum state* state);
 u16_t sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es);
 u16_t sqlc_is_connected(sqlc_descriptor*d, char* connected);
+
+/* mySQL related API's */
 u16_t sqlc_execute(sqlc_descriptor*d,const char* query);
-
-
 column_names* mysqlc_get_columns(sqlc_descriptor* d);
 row_values* mysqlc_get_next_row(sqlc_descriptor* d);
 

@@ -201,7 +201,7 @@ struct sql_connector{
 /**
  * sql_cd is a structure wraps up a single mysql connector (client).
  * This implementation for LWIP MySQL connector follows a sockets like convention, each connector has it's own
- * descriptor which is an integer representing an ID for the connector and the user application can trace it's connector
+ * descriptor which is an integer representing an ID for the connector and the user application can track it's connector
  *  status and send commands using this descriptor (ID). 
 */
 struct sql_cd{
@@ -215,7 +215,7 @@ struct sql_cd{
  * Array of sqlc_d structure for a fixed number of MySQL connectors(clients) 
  * the number of used MySQL connectors by the application is meant to be fixed,
  * and is specified by the MAX_SQL_CONNECTORS, this is useful for a low memory controllers to 
- * limit number of connection made by the application at the same time.
+ * limit number of simultanous connections made by the application.
 */
 static struct sql_cd sqlcd_array[MAX_SQL_CONNECTORS];
 

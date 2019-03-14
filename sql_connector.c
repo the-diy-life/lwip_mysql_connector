@@ -687,7 +687,7 @@ static err_t sqlc_sendrequest_allocated(struct sql_connector* sqlc_ptr)
 	 pcb = tcp_new();
 	 if(NULL == pcb)
 	 {
-		 LWIP_DEBUGF(SQLC_DEBUG, ("httpc_sendrequest_allocated(): calling tcp_new can not allocate memory for PCB.\n\r"));
+		 LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_sendrequest_allocated(): calling tcp_new can not allocate memory for PCB.\n\r"));
 		 err = ERR_MEM;
 		 goto leave;
 	 }

@@ -240,8 +240,8 @@ u16_t read_int(char* buffer,u16_t offset, u16_t size);
  * and returns a pointer to that buffer.
  *.
  *
- *  @param
- *  @param offset    offset from start of buffer, where to read the string.
+ *  @param s: pointer to the mysql connector(client) structure.
+ *  @param offset:   offset from start of buffer, where to read the string.
  *
  *  @return  pointer to the allocated string - String from the buffer
  */
@@ -289,15 +289,19 @@ u16_t mysqlc_read_packet(struct sql_connector* s){
 	return 1 ;
 }
 /*
-  mysqlc_free_columns_buffer - Free memory allocated for column names
-
-  This method frees the memory allocated during the get_columns()
-  method.
-
-  NOTICE: Failing to call this method after calling get_columns()
-          and consuming the column names, types, etc. will result
-          in a memory leak. The size of the leak will depend on
-          the size of the combined column names (bytes).
+ *  @brief Free memory allocated for column names
+ *
+ *  This method frees the memory allocated during the get_columns()
+ *  method.
+ *
+ *  @warning Failing to call this method after calling get_columns()
+ *           and consuming the column names, types, etc. will result
+ *           in a memory leak. The size of the leak will depend on
+ *           the size of the combined column names (bytes).
+ * 
+ *  @param  s: pointer to mysql connector(client) structure.
+ * 
+ * 
 */
 void mysqlc_free_columns_buffer(struct sql_connector* s) {
   // clear the columns
@@ -316,16 +320,20 @@ void mysqlc_free_columns_buffer(struct sql_connector* s) {
 
 
 /*
-  mysqlc_free_row_buffer - Free memory allocated for row values
-
-  This method frees the memory allocated during the get_next_row()
-  method.
-
-  NOTICE: You must call this method at least once after you
-          have consumed the values you wish to process. Failing
-          to do will result in a memory leak equal to the sum
-          of the length of values and one byte for each max cols.
-*/
+ *  @brief Free memory allocated for row values
+ *
+ *  This method frees the memory allocated during the get_next_row()
+ *  method.
+ *
+ *  @warning You must call this method at least once after you
+ *          have consumed the values you wish to process. Failing
+ *          to do will result in a memory leak equal to the sum
+ *          of the length of values and one byte for each max cols.
+ * 
+ * @param  s: pointer to mysql connector(client) structure.
+ * 
+ * 
+ */
 void mysqlc_free_row_buffer(struct sql_connector* s) {
   // clear the row
   for (u16_t f = 0; f < MAX_FIELDS; f++) {
@@ -500,7 +508,7 @@ char mysqlc_get_fields(struct sql_connector* s)
 
 /**
  * @brief after sending a select command successfully ,the server send back the selected table,
- * this function get a list * of the columns (fields)
+ * this function get a list * of the columns (fields).
  *
  * @param d: pointer to a mysql connector descriptor provided to get the connector returned table columns. 
  * @return column_names: pointer to an instance of the column_names structure
@@ -704,6 +712,18 @@ u16_t sqlc_create( sqlc_descriptor* d ){
 	sqlcd_array[i].sqlc_d = d;
 	return 0 ;
 }
+/** 
+ * @brief The actual mysql connect function, called by sqlc_connect and
+ * after setting up the sql_connector structure.
+ * 
+ * this function tries to connect to a mysql server.
+ * 
+ * @param sqlc_ptr pointer to the allocated mysql connector structure.
+ * 
+ * @return LWIP ERROR Code - ERR_OK : No errors, the client is trying to connect to the server.\n
+ *                         - ERR_MEM: Memory allocation error.\n
+ *                         - Another LWIP ERROR code returned by the tcp_connect function.
+ */
 static err_t sqlc_sendrequest_allocated(struct sql_connector* sqlc_ptr)
 {
 	 struct tcp_pcb *pcb = NULL;
@@ -789,6 +809,16 @@ u16_t sqlc_connect(sqlc_descriptor* d ,const char* hostname ,u16_t port, const c
 	sqlc_ptr->es = CONNECTOR_ERROR_OK;
 	return 0 ;
 }
+/**
+ * @brief disconnect the mysql connector from a server.
+ * 
+ * @param d: pointer to mysql connector already connected descriptor.
+ * 
+ * @return 0: disconnected sucessfully.\n
+ *         1: error disconnecting (either the descriptor doesn't belong to any mysql connector,
+ * the connector is busy, or is not connected to any server).
+ * 
+*/
 u16_t sqlc_disconnect(sqlc_descriptor*d)
 {
 	u16_t i = 0 ;
@@ -850,7 +880,7 @@ u16_t sqlc_delete(sqlc_descriptor*d)
  *            CONNECTOR_STATE_SENDING_DONE (the connector has send data successfully to the server). \n
  *            CONNECTOR_STATE_CONNECTOR_ERROR (the connector has an error while trying to connect or send data to the server).\n
  * 
- * @param d the mysql connector descriptor linked to the connector needed to provide it's state
+ * @param d the mysql connector descriptor linked to the connector needed to provide it's state.
  * @param state a pointer to state enum variable to be filled with the connector state.
  * 
  * @return 0: no errors , the state is updated successfully.\n
@@ -869,6 +899,18 @@ u16_t sqlc_get_state(sqlc_descriptor*d,enum state* state)
 	*state = sqlcd_array[i].sqlc->connector_state;
 	return 0 ;
 }
+/**
+ * @brief reads error state, usually called if the mysql connector
+ * state is CONNECTOR_STATE_CONNECTOR_ERROR to check the error happenned.
+ * 
+ * @param d the mysql connector descriptor linked to the connector needed to provide it's error state.  
+ * @param es pointer to an already allocated error state structure to be filled with the error state.
+ * 
+ * @return 0: success, error state is retrieved successfully.\n
+ *         1: error, the descriptor provided is not linked to any connector.
+ * 
+ * 
+*/
 u16_t sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es)
 {
 	u16_t i ;

@@ -16,7 +16,7 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
   Created on: Aug 21, 2017
        Author: Amr Elsayed
- */
+*/
 
 #ifndef INC_SQL_CONNECTOR_H_
 #define INC_SQL_CONNECTOR_H_
@@ -121,7 +121,7 @@ typedef struct {
 /**
  *  Structure for storing mySQL Query result set metadata.\n
  *
- **/
+ */
 typedef struct {
   /** actual number of fields.*/
   u16_t num_fields;
@@ -143,7 +143,7 @@ typedef struct {
  *  descriptor which is an integer representing an ID for the connector and the 
  *  user application can track it's connector
  *  status and send commands using this descriptor (ID).
- **/
+ */
 typedef u16_t sqlc_descriptor;
 
 /** limits number of simultanous connections made by the application. */

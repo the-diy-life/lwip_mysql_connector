@@ -1308,7 +1308,28 @@ void parse_error_packet(char* buffer,u16_t packet_len) {
 	  LWIP_DEBUGF(SQLC_DEBUG,("%c",(char)buffer[i+13]));
   LWIP_DEBUGF(SQLC_DEBUG,("."));
 }
-
+/**
+ * @brief Data has been received on this pcb.
+ * 
+ * The connector received a data from the server.
+ * 
+ * If the buffer is empty then the connection is closed
+ * by the remote server, an error flag CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION is sent to the application 
+ * if the connection is closed while sending data or during negotiation.
+ * 
+ * If buffer is not empty:\n
+ *              - If the connector is just connected to the server, then it parse the handshake packet
+ *              and sends the authentication data to the server.\n
+ *              - If the connector already have sent authentication data to the server. it parses ok packet,
+ * If received "OK" packet then the connection is successfull and the connector state is changed to
+ *  CONNECTOR_STATE_IDLE and error state to CONNECTOR_ERROR_OK to tell the application it's ready to send data.\n
+ *              - If the connector already have sent query,it parses ok packet,
+ * if received "OK" packet then the connection is successfull and the connector state is changed to
+ *  CONNECTOR_STATE_IDLE and error state to CONNECTOR_ERROR_OK to tell the application it can parse
+ * the received query response s->p.\n
+ *              - else then it's considered an unexpected response and ignored.
+ * 
+ */
 err_t
 sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
@@ -1317,6 +1338,7 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 	 LWIP_UNUSED_ARG(err);
 	 if(p != NULL)
 	 {
+		 /* if buffer is not empty */
 		 struct pbuf *q;
 		 u16_t i =0;
 		 /* received data */
@@ -1326,6 +1348,10 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 				pbuf_cat(s->p, p);
 		 }
 		 if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == SQLC_CONNECTED){
+			 /*
+				* if the connector is just connected to the server, then it parse the handshake packet
+ 				* and sends the authentication data to the server.
+			 */
 			 if(p->tot_len > 4){
 				 u32_t packet_length = ((char*)p->payload)[0];
 				 packet_length += ((char*)p->payload)[1]<<8;
@@ -1347,6 +1373,12 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 				 }
 			 }
 		 }else if (s->connector_state == CONNECTOR_STATE_CONNECTING && (s->state == SQLC_RECV || s->state == SQLC_SENT)){
+			/*
+			 *  if the connector already have sent authentication data to the server. it parses ok packet,
+			 * if received "OK" packet then the connection is successfull and the connector state is changed to
+			 *  CONNECTOR_STATE_IDLE and error state to CONNECTOR_ERROR_OK to tell the application it's ready
+			 *  to send data.
+			 */
 			 if(p->tot_len > 4){
 				 u32_t packet_length = ((char*)p->payload)[0];
 				 packet_length += ((char*)p->payload)[1]<<8;
@@ -1375,6 +1407,12 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 				 }
 			 }
 		 }else if (s->connector_state == CONNECTOR_STATE_SENDING){
+			 /* 
+			  * if the connector already have sent query,it parses ok packet,
+				* if received "OK" packet then the connection is successfull and the connector state is changed to
+				* CONNECTOR_STATE_IDLE and error state to CONNECTOR_ERROR_OK to tell the application it can parse
+				* the received query response s->p .
+				*/
 			 if(p->tot_len > 4){
 				 u32_t packet_length = ((char*)p->payload)[0];
 				 packet_length += ((char*)p->payload)[1]<<8;
@@ -1399,12 +1437,18 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 			 }
 
 		 }else{
+			 /* it's considered an unexpected response and ignored */
 			 tcp_recved(pcb, p->tot_len);
 		     //pbuf_free(p);
 		 }
 	     s->state = SQLC_RECV;
 	 }
 	 else{
+		 /* 
+			* if the buffer is empty then the connection is closed
+			* by the remote server, an error flag CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION is sent to the application 
+			* if the connection is closed while sending data or during negotiation.
+			*/
 		 LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_recv: connection closed by remote host\n\r"));
 		 if((s->connector_state == CONNECTOR_STATE_CONNECTING  )
 				 && (s->state == SQLC_CONNECTED || s->state == SQLC_RECV || s->state == SQLC_SENT)){
@@ -1414,29 +1458,36 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 		 sqlc_close(s);
 		 s->state = SQLC_CLOSED;
 	 }
-
 	 return ret_code;
 }
+/**
+ * @brief Data has been sent and acknowledged by the remote host.
+ * This means that more data can be sent.
+ * 
+ */
 err_t sqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
 {
 	struct sql_connector * s = arg;
 	LWIP_DEBUGF(SQLC_DEBUG,("sqlc_sent:Done Sending to client : %d",len));
 	LWIP_DEBUGF(SQLC_DEBUG,("\n\r"));
+	/* the connector timer for timeout is reset so that the connection will not be closed, not waiting any more*/
 	if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == SQLC_RECV){
 
 		s->timer = SQLC_TIMEOUT;
 	}else if (s->connector_state == CONNECTOR_STATE_SENDING){
 		s->timer = SQLC_TIMEOUT;
 	}
+	
 	s->payload_sent +=len;
 	if(s->payload && s->payload_len - s->payload_sent)
 	{
+		/* if the sending buffer has more data, try to continue sending data */
 		sqlc_send(pcb,s);
 	}
 	else
 	{
+		/* if the sending buffer is empty, change the pcb state to SQLC_SENT and clean up allocated buffers */
 		s->state = SQLC_SENT;
-
 		if (s->payload && !(s->payload_len - s->payload_sent)){
 		mem_free(s->payload);
 		s->payload = NULL;

@@ -232,16 +232,19 @@ err_t sqlc_send(struct tcp_pcb *pcb,struct sql_connector* s);
 void store_int(char *buff, u32_t value, u16_t size);
 u16_t get_lcb_len(char* buffer,u16_t offset);
 u16_t read_int(char* buffer,u16_t offset, u16_t size);
-/*
-  mysqlc_read_string - Retrieve a string from the buffer
-
-  This reads a string from the buffer. It reads the length of the string
-  as the first byte.
-
-  offset[in]      offset from start of buffer
-
-  Returns string - String from the buffer
-*/
+/**
+ * @brief Retrieve a string from the buffer
+ *
+ * This reads a string from the buffer (received payload) into an allocated string. It first reads the length of 
+ * the string as the first byte (at offset) then copy the string after the first byte to the allocated buffer 
+ * and returns a pointer to that buffer.
+ *.
+ *
+ *  @param
+ *  @param offset    offset from start of buffer, where to read the string.
+ *
+ *  @return  pointer to the allocated string - String from the buffer
+ */
 char * mysqlc_read_string(struct sql_connector* s,u16_t *offset) {
   u16_t len_bytes = get_lcb_len(&((char*)(s->p->payload))[s->p_index] ,((char*)(s->p->payload))[s->p_index + *offset]);
   u16_t len = read_int(&((char*)(s->p->payload))[s->p_index],*offset, len_bytes);
@@ -251,9 +254,14 @@ char * mysqlc_read_string(struct sql_connector* s,u16_t *offset) {
   *offset += len_bytes+len;
   return str;
 }
-/*
- * this function is just moving the pointer to the next packet...
+/**
+ * @brief This function is just moving the pointer to the next packet...
  *
+ * @param  s: pointer to mysql connector(client) structure.
+ * 
+ * @return 0: request done without errors.\n
+ *         1: error, No Payload found to read from or all packets has been read already.
+ * 
  */
 u16_t mysqlc_read_packet(struct sql_connector* s){
 	if(s->p->payload){
@@ -328,21 +336,21 @@ void mysqlc_free_row_buffer(struct sql_connector* s) {
   }
 }
 /*
-  mysqlc_get_row - Read a row from the server and store it in the buffer
-
-  This reads a single row and stores it in the buffer. If there are
-  no more rows, it returns MYSQL_EOF_PACKET. A row packet is defined as
-  follows.
-
-  Bytes                   Name
-  -----                   ----
-  n (Length Coded String) (column value)
-  ...
-
-  Note: each column is store as a length coded string concatenated
-        as a single stream
-
-  Returns integer - MYSQL_EOF_PACKET if no more rows, 0 if more rows available
+ * @brief Read a row from the server received payload.
+ *
+ * This reads a single row (moving the received payload pointer to the next packet).If there are
+ * no more rows, it returns MYSQL_EOF_PACKET. A row packet is defined as
+ * follows.
+ *
+ * Bytes                   Name
+ * -----                   ----
+ * n (Length Coded String) (column value)
+ * ...
+ *
+ * @note: each column is store as a length coded string concatenated
+ *       as a single stream
+ *
+ * @return integer - MYSQL_EOF_PACKET if no more rows, 0 if more rows available
 */
 u16_t mysqlc_get_row(struct sql_connector* s) {
   // Read row packets
@@ -358,14 +366,19 @@ u16_t mysqlc_get_row(struct sql_connector* s) {
   return MYSQL_EOF_PACKET;
 }
 
-
-/*
-  mysql_get_row_values - reads the row values from the read buffer
-
-  This method is used to read the row column values
-  from the read buffer and store them in the row structure
-  in the class.
-*/
+/**
+ * @brief reads the row values from the read buffer
+ * 
+ * This method is used to read the row column values
+ * from the read buffer and store them in an allocated buffers,
+ * then store those allocated buffers pointers in the row structure
+ * in the sql connector structure.
+ * 
+ * @param  s: pointer to mysql connector(client) structure.
+ * 
+ * @return 0: no errors - read Done
+ *         MYSQL_EOF_PACKET: error end of frame - no more rows to read.
+ */
 u16_t mysqlc_get_row_values(struct sql_connector* s) {
   u16_t res = 0;
   u16_t offset = 0;
@@ -389,32 +402,37 @@ u16_t mysqlc_get_row_values(struct sql_connector* s) {
   }
   return res;
 }
-
-/*
-  get_field - Read a field from the server
-
-  This method reads a field packet from the server. Field packets are
-  defined as:
-
-  Bytes                      Name
-  -----                      ----
-  n (Length Coded String)    catalog
-  n (Length Coded String)    db
-  n (Length Coded String)    table
-  n (Length Coded String)    org_table
-  n (Length Coded String)    name
-  n (Length Coded String)    org_name
-  1                          (filler)
-  2                          charsetnr
-  4                          length
-  1                          type
-  2                          flags
-  1                          decimals
-  2                          (filler), always 0x00
-  n (Length Coded Binary)    default
-
-  Note: the sum of all db, column, and field names must be < 255 in length
-*/
+/**
+ * @brief Read a field from the server read buffer
+ * 
+ * This method reads a field packet from the server in structerd allocated buffers and return
+ * pointer to that field.\n
+ * Field packets are defined as:
+ *  Bytes                      Name
+ *  -----                      ----
+ *  n (Length Coded String)    catalog
+ *  n (Length Coded String)    db
+ *  n (Length Coded String)    table
+ *  n (Length Coded String)    org_table
+ *  n (Length Coded String)    name
+ *  n (Length Coded String)    org_name
+ *  1                          (filler)
+ *  2                          charsetnr
+ *  4                          length
+ *  1                          type
+ *  2                          flags
+ *  1                          decimals
+ *  2                          (filler), always 0x00
+ *  n (Length Coded Binary)    default
+ *
+ * @note: the sum of all db, column, and field names must be < 255 in length
+ * 
+ * @param s: pointer to mysql connector(client) structure.\n
+ *       fs: pointer to field structure to be filled with the field data pointers (db ,table , names)
+ *
+ * @return 0: field is read successfully.\n
+ *         MYSQL_EOF_PACKET: error, no more packets in the server payload to read from.
+ */
 u16_t mysqlc_get_field(struct sql_connector* s,field_struct *fs) {
   u16_t len_bytes;
   u16_t len;
@@ -441,13 +459,18 @@ u16_t mysqlc_get_field(struct sql_connector* s,field_struct *fs) {
   return MYSQL_EOF_PACKET;
 }
 
-/*
-  mysqlc_get_fields - reads the fields from the read buffer
-
-  This method is used to read the field names, types, etc.
-  from the read buffer and store them in the columns structure
-  in the class.
-*/
+/**
+ * @brief reads the fields from the read buffer.
+ * 
+ * This method is used to read the field names, values, types, etc.
+ * from the read buffer in a memory allocated buffers and store their pointers in the columns structure
+ * in the sql connector structure.
+ * 
+ * @param  s: pointer to mysql connector(client) structure.
+ * 
+ * @return  1: read successful.\n
+ *          0: error reading fields ( memory issue or no more packets to get frames from) 
+ */
 char mysqlc_get_fields(struct sql_connector* s)
 {
   u16_t num_fields = 0;
@@ -476,7 +499,8 @@ char mysqlc_get_fields(struct sql_connector* s)
 }
 
 /**
- * @brief after sending a select command successfully ,the server send back the selected table, this function get a list * of the columns (fields)
+ * @brief after sending a select command successfully ,the server send back the selected table,
+ * this function get a list * of the columns (fields)
  *
  * @param d: pointer to a mysql connector descriptor provided to get the connector returned table columns. 
  * @return column_names: pointer to an instance of the column_names structure
@@ -1204,16 +1228,20 @@ err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb,c
 	}
 	return ERR_MEM;
 }
-/*
-  get_lcb_len - Retrieves the length of a length coded binary value
-
-  This reads the first byte from the offset into the buffer and returns
-  the number of bytes (size) that the integer consumes. It is used in
-  conjunction with read_int() to read length coded binary integers
-  from the buffer.
-
-  Returns integer - number of bytes integer consumes
-*/
+/**
+ * @brief Retrieves the length of a length coded binary value
+ * 
+ * This reads the first byte from the offset into the buffer and returns
+ * the number of bytes (size) that the integer consumes. It is used in
+ * conjunction with read_int() to read length coded binary integers 
+ * from the buffer.
+ *
+ *  @param buffer: pointer to the read buffer.
+ *  @param offset: index of the next packet.
+ * 
+ *  @return integer - length of a length coded binary value 
+ * 
+ */
 u16_t get_lcb_len(char* buffer,u16_t offset) {
   u16_t read_len = buffer[offset];
   if (read_len > 250) {
@@ -1228,18 +1256,17 @@ u16_t get_lcb_len(char* buffer,u16_t offset) {
   }
   return 1;
 }
-
-/*
-  read_int - Retrieve an integer from the buffer in size bytes.
-
-  This reads an integer from the buffer at offset position indicated for
-  the number of bytes specified (size).
-
-  offset[in]      offset from start of buffer
-  size[in]        number of bytes to use to store the integer
-
-  Returns integer - integer from the buffer
-*/
+/**
+ * @brief Retrieve an integer from the buffer in size bytes. 
+ * 
+ * This reads an integer from the buffer at offset position indicated 
+ * for the number of bytes specified (size).
+ * 
+ *  @param buffer: pointer to the read buffer.
+ *  @param offset: index of the next packet.
+ * 
+ *  @return integer - integer from the buffer
+ */
 u16_t read_int(char* buffer,u16_t offset, u16_t size) {
   u16_t value = 0;
   u16_t new_size = 0;
@@ -1255,22 +1282,28 @@ u16_t read_int(char* buffer,u16_t offset, u16_t size) {
   }
   return value;
 }
-/*
-  check_ok_packet - Decipher an Ok packet from the server.
-
-  This method attempts to parse an Ok packet. If the packet is not an
-  Ok, packet, it returns the packet type.
-
-   Bytes                       Name
-   -----                       ----
-   1   (Length Coded Binary)   field_count, always = 0
-   1-9 (Length Coded Binary)   affected_rows
-   1-9 (Length Coded Binary)   insert_id
-   2                           server_status
-   2                           warning_count
-   n   (until end of packet)   message
-
-  Returns integer - 0 = successful parse, packet type if not an Ok packet
+/**
+ * @brief Decipher an Ok packet from the server received payload.
+ * 
+ *  This method attempts to parse an Ok packet. If the packet is not an
+ *  Ok packet, it returns the packet type.
+ *
+ * @verbatim
+ *   Bytes                       Name
+ *   -----                       ----
+ *   1   (Length Coded Binary)   field_count, always = 0
+ *   1-9 (Length Coded Binary)   affected_rows
+ *   1-9 (Length Coded Binary)   insert_id
+ *   2                           server_status
+ *   2                           warning_count
+ *   n   (until end of packet)   message
+ * @endverbatim
+ *  
+ * @param buffer: pointer to the read buffer.
+ * 
+ * @return integer - 0: successful parse.\n
+ *                   packet type: if not an Ok packet\n
+ *                   MYSQL_ERROR_PACKET: if the passed buffer is NULL.
 */
 u16_t check_ok_packet(char* buffer) {
 	if(buffer != NULL){
@@ -1282,23 +1315,30 @@ u16_t check_ok_packet(char* buffer) {
 	return MYSQL_ERROR_PACKET;
 }
 
-/*
-  parse_error_packet - Display the error returned from the server
-
-  This method parses an error packet from the server and displays the
-  error code and text via Serial.print. The error packet is defined
-  as follows.
-
-  Note: the error packet is already stored in the buffer since this
-        packet is not an expected response.
-
-  Bytes                       Name
-  -----                       ----
-  1                           field_count, always = 0xff
-  2                           errno
-  1                           (sqlstate marker), always '#'
-  5                           sqlstate (5 characters)
-  n                           message
+/**
+ *  @brief Display the error returned from the server received payload , if a non ok packet is received.
+ *
+ *  This method parses an error packet from the server and displays the
+ *  error code and text via LWIP_DEBUGF. The error packet is defined
+ *  as follows.
+ *
+ *  @note: the error packet is already stored in the buffer since this
+ *        packet is not an expected response.
+ *
+ *  @verbatim
+ *  Bytes                       Name
+ *  -----                       ----
+ *  1                           field_count, always = 0xff
+ *  2                           errno
+ *  1                           (sqlstate marker), always '#'
+ *  5                           sqlstate (5 characters)
+ *  n                           message
+ * @endverbatim
+ * 
+ * @param buffer: pointer to the read buffer.
+ * @param packet_len: total length of the received packet.
+ * 
+ * 
 */
 void parse_error_packet(char* buffer,u16_t packet_len) {
   LWIP_DEBUGF(SQLC_DEBUG,("Error: "));

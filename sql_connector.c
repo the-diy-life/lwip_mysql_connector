@@ -97,24 +97,50 @@ enum sqlc_session_state{
 	SQLC_CLOSED
 };
 
-
+/** Result hash string size in bytes */
 #define HASH_LENGTH 20
+/** 
+ * SHA1 Buffer size, the hashing process is done on chunks. each is of that size, 
+ * meaning whenever the buffer is filled with that BLOCK_LENGTH, a hash process is done on the buffer,
+ * before proceeding on refilling the buffer and hashing it.
+ * 
+*/
 #define BLOCK_LENGTH 64
 
-#define MYSQL_SHA1_K0 0x5a827999
+/** SHA1 Key  K0 from bit 0 to bit 19 */
+#define MYSQL_SHA1_K0 0x5a827999 
+/** SHA1 Key K20 from bit 20 to bit 39 */
 #define MYSQL_SHA1_K20 0x6ed9eba1
+/** SHA1 Key K40 from bit 40 to bit 59 */
 #define MYSQL_SHA1_K40 0x8f1bbcdc
+/** SHA1 Key K60 from bit 60 to bit 79 */
 #define MYSQL_SHA1_K60 0xca62c1d6
 
+/**
+ * SHA1 buffer is filled with the data to be hashed.
+ * the buffer is structured in a union to provide the flexability of 
+ * accessing the buffer on byte mode and also Word mode.
+ * the buffer is filled on "XOR 3" convention.
+ * @so Encrypt_SHA1_addUncounted
+*/
 union _sha1_buffer {
   u8_t b[BLOCK_LENGTH];
   u32_t w[BLOCK_LENGTH/4];
 };
+/**
+ * SHA1 result buffer is used to save the SHA1 hash result (digest).
+ * the buffer is structured in a union to provide the flexability of 
+ * accessing the buffer on byte mode and also Word mode.
+ * 
+*/
 union _sha1_state {
   u8_t b[HASH_LENGTH];
   u32_t w[HASH_LENGTH/4];
 };
-
+/**
+ * SHA1 Initialization State (constant) used on the hashing process.
+ * 
+*/
 const u8_t sha1InitState[] = {
   0x01,0x23,0x45,0x67, // H0
   0x89,0xab,0xcd,0xef, // H1
@@ -172,25 +198,29 @@ struct sql_connector{
 	char* server_version;
 
 
-	/** */
+	/** client sha1_buffer holding the data to be hashed*/
 	union _sha1_buffer sha1_buffer;
-	/** */
+	/** sha1 buffer Offset used as index for the sha1_buffer during the hashing process  */
 	u8_t bufferOffset;
-	/** */
+	/** client sha1 result buffer  */
 	union _sha1_state sha1_state;
-	/** */
+	/** SHA1 Counter for number of bytes to be hashed*/
 	u32_t byteCount;
-	/** */
+	/** @todo not used remove*/
 	u8_t keyBuffer[BLOCK_LENGTH];
-	/** */
+	/** @todo not used remove */
 	u8_t innerHash[HASH_LENGTH];
-	/** */
+
+	/** SHA1 seed buffer used to save the server provided seed on the handshake packet 
+	 * to be used on the hashing process.
+	*/
 	char seed[20];
-	/** */
-	u16_t num_cols;
+
 
 	/* MySQL table specific data */
-
+	
+	/** MySQL table number of columns  */
+	u16_t num_cols;
 	/** MySQL table columns data  */
 	column_names columns;
 	/** MySQL table rows data */
@@ -232,6 +262,7 @@ err_t sqlc_send(struct tcp_pcb *pcb,struct sql_connector* s);
 void store_int(char *buff, u32_t value, u16_t size);
 u16_t get_lcb_len(char* buffer,u16_t offset);
 u16_t read_int(char* buffer,u16_t offset, u16_t size);
+
 /**
  * @brief Retrieve a string from the buffer
  *
@@ -571,16 +602,41 @@ row_values* mysqlc_get_next_row(sqlc_descriptor* d) {
   }
   return NULL;
 }
-
+/**
+ * @brief Initialize sha1 state buffer and reset it's indexes
+ * byteCount and bufferOffset.
+ * 
+ * @param s pointer to the mysql connector(client) structure needed to
+ * initialize it's sha1 buffers.
+ * 
+*/
 
 void Encrypt_SHA1_init(struct sql_connector* s) {
   memcpy(s->sha1_state.b,sha1InitState,HASH_LENGTH);
   s->byteCount = 0;
   s->bufferOffset = 0;
 }
+/**
+ * @brief Rotate a 32 bits value to the left by the number of bits
+ * specified by bits.
+ * 
+ * @param number value to be rotated.
+ * @param bits number of steps to rotate the value
+ * 
+ * @return the new rotated 32 bits value. 
+ * 
+*/
 u32_t Encrypt_SHA1_rol32(u32_t number, uint8_t bits) {
   return ((number << bits) | (number >> (32-bits)));
 }
+/**
+ * @brief hash a single Block with size BLOCK_LENGTH from the 
+ * sha1_buffer to the sha1_state in the mysql connector structure.
+ * 
+ * @param s pointer to the mysql connector(client) structure needed to
+ * hash its sha1_buffer block.
+ * 
+*/
 void Encrypt_SHA1_hashBlock(struct sql_connector* s) {
   // SHA1 only for now
   uint8_t i;
@@ -618,6 +674,18 @@ void Encrypt_SHA1_hashBlock(struct sql_connector* s) {
   s->sha1_state.w[3] += d;
   s->sha1_state.w[4] += e;
 }
+/**
+ * @brief add a single byte to the sha1_buffer, notice the data byte is placed
+ * in "bufferOffset ^ 3" offset of the buffer.
+ * 
+ * When the bufferOffset is equal to BLOCK_LENGTH, this block is hashed in the sha1_state
+ * and bufferOffset is reset for another BLOCK to be hashed.
+ * 
+ * @param s pointer to the mysql connector(client) structure 
+ * holding that sha1_buffer. 
+ * 
+ * @param data single byte to be added to the sha1_buffer to be hashed
+*/
 void Encrypt_SHA1_addUncounted(struct sql_connector* s,uint8_t data) {
   s->sha1_buffer.b[s->bufferOffset ^ 3] = data;
   s->bufferOffset++;
@@ -626,20 +694,71 @@ void Encrypt_SHA1_addUncounted(struct sql_connector* s,uint8_t data) {
     s->bufferOffset = 0;
   }
 }
+/**
+ * @brief write single byte to the sha1_buffer to be hashed.
+ * 
+ * it increment number of bytes counter in the sha1_buffer and call
+ * "Encrypt_SHA1_addUncounted" the main write to the buffer function.
+ * 
+ * @sa  Encrypt_SHA1_addUncounted
+ * 
+ * 
+ * @param s pointer to the mysql connector(client) structure 
+ * holding that sha1_buffer. 
+ * 
+ * @param data single byte to be added to the sha1_buffer to be hashed
+ * 
+ * 
+*/
 void Encrypt_SHA1_write(struct sql_connector* s,uint8_t data) {
   ++s->byteCount;
   Encrypt_SHA1_addUncounted(s,data);
 }
-
+/**
+ * @brief Write an array of bytes to sha1_buffer with a known length
+ * 
+ * @sa  Encrypt_SHA1_write Encrypt_SHA1_addUncounted 
+ * 
+ * 
+ * @param s pointer to the mysql connector(client) structure 
+ * holding that sha1_buffer. 
+ * 
+ * @param data pointer to the array of bytes to be added to the sha1_buffer
+ * @param length number of data bytes to write to the sha1_buffer from the data array - array size
+ * 
+ * 
+*/
 void Encrypt_SHA1_write_arr(struct sql_connector* s,const uint8_t* data, u16_t length) {
   for (u16_t i=0; i<length; i++) {
 	  Encrypt_SHA1_write(s,data[i]);
   }
 }
+/**
+ * @brief write a string to the sha1_buffer
+ * 
+ * @sa Encrypt_SHA1_write_arr Encrypt_SHA1_write Encrypt_SHA1_addUncounted
+ * 
+ * @param s pointer to the mysql connector(client) structure 
+ * holding that sha1_buffer. 
+ * 
+ * @param data pointer to a null teriminated string to be added to the sha1_buffer
+ * 
+*/
 void Encrypt_SHA1_print(struct sql_connector* s,const uint8_t* data){
 	u16_t length = strlen(data);
 	Encrypt_SHA1_write_arr(s,data,length);
 }
+
+/**
+ * @brief Implement SHA-1 padding (fips180-2 ยง5.1.1)
+ * 
+ * add SHA-1 padding bytes to the sha1_buffer
+ * 
+ * @param s pointer to the mysql connector(client) structure 
+ * holding that sha1_buffer. 
+ * 
+ * 
+*/
 void Encrypt_SHA1_pad(struct sql_connector* s) {
   // Implement SHA-1 padding (fips180-2 ยง5.1.1)
 
@@ -657,7 +776,18 @@ void Encrypt_SHA1_pad(struct sql_connector* s) {
   Encrypt_SHA1_addUncounted(s,s->byteCount >> 5);
   Encrypt_SHA1_addUncounted(s,s->byteCount << 3);
 }
-
+/**
+ * @brief Returns SHA1 hashed buffer called after hashing sha1_buffer
+ * 
+ * It first adds SHA-1 padding bytes to the sha1_buffer to be hashed, swap byte order back 
+ * for the hashed buffer sha1_state and returns a pointer to the sha1_state buffer.
+ * 
+ * @param s pointer to the mysql connector(client) structure 
+ * holding the hashing buffers
+ * 
+ * @return pointer to the hashed buffer (20 characters).
+ * 
+*/
 uint8_t* Encrypt_SHA1_result(struct sql_connector* s) {
   // Pad to complete the last block
 	Encrypt_SHA1_pad(s);
@@ -679,6 +809,8 @@ uint8_t* Encrypt_SHA1_result(struct sql_connector* s) {
 
 #define HMAC_IPAD 0x36
 #define HMAC_OPAD 0x5c
+
+
 /**
  * @brief Create a mysql connector structure and 
  * link it to the provided descriptor.
@@ -1107,9 +1239,16 @@ sqlc_close(struct sql_connector *s)
 	sqlc_cleanup(s);
 	return 1;
 }
-
-
-
+/**
+ * @brief parse handshake packet from the server payload.
+ * 
+ * Reads the mysql version for that server, and the hash seed used 
+ * for hashing the mysql authentication password.
+ * 
+ * @param s pointer to the mysql connector(client) structure
+ * @param p pointer to the LWIP buffer holding the server handshake packet payload.
+ * 
+*/
 void parse_handshake_packet(struct sql_connector* s,struct pbuf *p)
 {
 	u16_t len = strlen(&(((char*)p->payload)[5]));
@@ -1143,6 +1282,19 @@ err_t sqlc_send(struct tcp_pcb *pcb,struct sql_connector* s){
 	tcp_sent(pcb, sqlc_sent);
 	return ret_code;
 }
+/**
+ * @brief hash the user provided authentication password using SHA1
+ * using the server provided seed on the handshake packet.
+ * 
+ * @param s pointer to MySQL connector (client) structure.
+ * @param password pointer to the authentication password string to be hashed.
+ * @param pwd_hash pointer to a buffer to save the hashed password in.
+ * 
+ * return byte.\n 
+ * 					1: Password hashed successfully.\n
+ *          0: Error, the provided password is empty or is not a NULL terminated string.
+ * 
+*/
 char scramble_password(struct sql_connector* s,const char* password , char* pwd_hash)
 {
 	char *digest;
@@ -1210,7 +1362,25 @@ void store_int(char *buff, u32_t value, u16_t size) {
     buff[3] = (char)(value >> 24);
   }
 }
-
+/**
+ * @brief construct and send the authentication packet to the server.
+ * 
+ * Called after parsing the server handshake packet, it constructs the authentication
+ * packet containing the username and password. the password is hashed using SHA1 protocol
+ * then the scrambled 20 character length password is added to the packet.
+ * 
+ * @param s pointer to the mysql connector (client) structure containing
+ * the payload buffer, sha1 buffers used on the building the authentication packet.
+ * 
+ * @param pcb the LWIP PCB associated to the mysql connector(client) to send the packet on.
+ * @param user pointer to authentication username string to be added to the packet..
+ * @param password pointer to authentication password string to be hashed and added to the packet.
+ * 
+ * @return err_t LWIP Error code :\n
+ * 							ERR_MEM memory allocation error while creating the sending buffer.\n
+ *              Another LWIP error while sending the packet through the LWIP Stacl "sqlc_send()"
+ * 
+*/
 err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb,const char *user,const char *password)
 {
 	s->payload = (char*) mem_malloc(256);
@@ -1307,7 +1477,7 @@ u16_t get_lcb_len(char* buffer,u16_t offset) {
  *  @param buffer: pointer to the read buffer.
  *  @param offset: index of the next packet.
  * 
- *  @return integer - integer from the buffer
+ *  @return integer - parsed integer from the buffer
  */
 u16_t read_int(char* buffer,u16_t offset, u16_t size) {
   u16_t value = 0;

@@ -42,12 +42,12 @@ example :
 		
  */
 
-#include "sql_connector.h"
+#include "mysql_connector.h"
 #include "connect.h"
 #include "lwip/debug.h"
 
 
-sqlc_descriptor sd;
+mysqlc_descriptor sd;
 
 // two states (init , loop)
 enum connect_states{
@@ -67,20 +67,20 @@ void connect_periodic_handler(void)
 	switch(cs){
 
 		case CONNECT_INIT:
-			ret = sqlc_create(&sd);
+			ret = mysqlc_create(&sd);
 			if(!ret){
-				ret = sqlc_connect(&sd,hostname,3306,username,password);
+				ret = mysqlc_connect(&sd,hostname,3306,username,password);
 				if(!ret)
 					cs = CONNECT_LOOP;
 				else{
-					sqlc_delete(&sd);
+					mysqlc_delete(&sd);
 				}
 			}
 
 			break;
 
 		case CONNECT_LOOP:
-			sqlc_is_connected(&sd,&connected);
+			mysqlc_is_connected(&sd,&connected);
 			if(connected){
 				// success , celebrate...
 				 LWIP_DEBUGF(LWIP_DBG_ON, ("connect_periodic_handler():Connected\n\r"));

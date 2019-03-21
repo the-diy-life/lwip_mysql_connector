@@ -1,5 +1,5 @@
 /*
- sql_connector.h
+ mysql_connector.h
  Copyright (c) 2017 DIY Life. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
@@ -18,8 +18,8 @@
        Author: Amr Elsayed
 */
 
-#ifndef INC_SQL_CONNECTOR_H_
-#define INC_SQL_CONNECTOR_H_
+#ifndef INC_MYSQL_CONNECTOR_H_
+#define INC_MYSQL_CONNECTOR_H_
 
 #include "lwip/err.h"
 
@@ -36,24 +36,6 @@
 ///@}
 
 
-/** Request successfully got */
-#define SQLC_RESULT_OK            0
-/** Unknown error */
-#define SQLC_RESULT_ERR_UNKNOWN   1
-/** Connection to server failed */
-#define SQLC_RESULT_ERR_CONNECT   2
-/** Failed to resolve server hostname */
-#define SQLC_RESULT_ERR_HOSTNAME  3
-/** Connection unexpectedly closed by remote server */
-#define SQLC_RESULT_ERR_CLOSED    4
-/** Connection timed out (server didn't respond in time) */
-#define SQLC_RESULT_ERR_TIMEOUT   5
-/** Server responded with an unknown response code */
-#define SQLC_RESULT_ERR_SVR_RESP  6
-/** No Enough buffer for Data */
-#define SQLC_BUFFER_ERR           7
-/** No Enough Memory for TCP_WRITE */
-#define SQLC_TCP_MEM_ERR          8
 
 /**
  * when mySQL Connector state is CONNECTOR_STATE_CONNECTOR_ERROR.\n
@@ -144,22 +126,22 @@ typedef struct {
  *  user application can track it's connector
  *  status and send commands using this descriptor (ID).
  */
-typedef u16_t sqlc_descriptor;
+typedef u16_t mysqlc_descriptor;
 
 /** limits number of simultanous connections made by the application. */
-#define MAX_SQL_CONNECTORS 10
+#define MAX_MYSQL_CONNECTORS 10
 
-u16_t sqlc_create( sqlc_descriptor* d );
-u16_t sqlc_connect(sqlc_descriptor* d ,const char* hostname ,u16_t port, const char* username ,const char* password );
-u16_t sqlc_disconnect(sqlc_descriptor*d);
-u16_t sqlc_delete(sqlc_descriptor*d);
-u16_t sqlc_get_state(sqlc_descriptor*d,enum state* state);
-u16_t sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es);
-u16_t sqlc_is_connected(sqlc_descriptor*d, char* connected);
+u16_t mysqlc_create( mysqlc_descriptor* d );
+u16_t mysqlc_connect(mysqlc_descriptor* d ,const char* hostname ,u16_t port, const char* username ,const char* password );
+u16_t mysqlc_disconnect(mysqlc_descriptor*d);
+u16_t mysqlc_delete(mysqlc_descriptor*d);
+u16_t mysqlc_get_state(mysqlc_descriptor*d,enum state* state);
+u16_t mysqlc_get_error_state(mysqlc_descriptor*d,enum error_state* es);
+u16_t mysqlc_is_connected(mysqlc_descriptor*d, char* connected);
 
 /* mySQL related API's */
-u16_t sqlc_execute(sqlc_descriptor*d,const char* query);
-column_names* mysqlc_get_columns(sqlc_descriptor* d);
-row_values* mysqlc_get_next_row(sqlc_descriptor* d);
+u16_t mysqlc_execute(mysqlc_descriptor*d,const char* query);
+column_names* mysqlc_get_columns(mysqlc_descriptor* d);
+row_values* mysqlc_get_next_row(mysqlc_descriptor* d);
 
-#endif /* INC_SQL_CONNECTOR_H_ */
+#endif /* INC_MYSQL_CONNECTOR_H_ */

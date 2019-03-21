@@ -5,7 +5,7 @@
  * @verbinclude "README.md"
  */
 /*
- sql_connector.c
+ mysql_connector.c
  Copyright (c) 2017 DIY Life. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
@@ -61,40 +61,40 @@
 
 #include "lwip/api.h"
 #include "lwip/sys.h"
-#include "sql_connector.h"
+#include "mysql_connector.h"
 #include <string.h>
 
 /**
  * specify the frequency for calling the tcp configured poll function 
  * 
 */
-#define SQLC_POLL_INTERVAL 4   ///<  4 * 0.5 SEC.
+#define MYSQLC_POLL_INTERVAL 4   ///<  4 * 0.5 SEC.
 /**
  * specify the number of times the poll function is called before closing the connection. 
  * 
 */
-#define SQLC_TIMEOUT 4// * 60 * (sqlc_poll_INTERVAL / 2) // two minutes.
+#define MYSQLC_TIMEOUT 4// * 60 * (mysqlc_poll_INTERVAL / 2) // two minutes.
 
-/** Standard SQLC port - you can use custom port for you application instead using the API's */
-#ifndef SQLC_DEFAULT_PORT
-#define SQLC_DEFAULT_PORT 3306
+/** Standard MYSQLC port - you can use custom port for you application instead using the API's */
+#ifndef MYSQLC_DEFAULT_PORT
+#define MYSQLC_DEFAULT_PORT 3306
 #endif
 
 /** the Debuggers is ON by Default*/
-#ifdef SQLC_DEBUG
-#undef SQLCC_DEBUG
+#ifdef MYSQLC_DEBUG
+#undef MYSQLC_DEBUG
 #endif
-#define SQLC_DEBUG         LWIP_DBG_ON
+#define MYSQLC_DEBUG         LWIP_DBG_ON
 
 /**
  * the lifecycle for the mysql connector PCB along a connection. 
 */
-enum sqlc_session_state{
-	SQLC_NEW = 0,
-	SQLC_CONNECTED,
-	SQLC_RECV,
-	SQLC_SENT,
-	SQLC_CLOSED
+enum mysqlc_session_state{
+	MYSQLC_NEW = 0,
+	MYSQLC_CONNECTED,
+	MYSQLC_RECV,
+	MYSQLC_SENT,
+	MYSQLC_CLOSED
 };
 
 /** Result hash string size in bytes */
@@ -153,15 +153,15 @@ const u8_t sha1InitState[] = {
  * contains the connection status, the PCB status, MySQL server information,
  * encryption data, MySQL sent payload (queries), MySQL specific variables for parsing MySQL table. 
  */
-struct sql_connector{
+struct mysql_connector{
 	/** client connection state (0: not connected, 1: connected) */
 	char connected;
 	/** client error state, to trace if an error is occured during a connection attempt, this emum need to be watched.*/
 	enum error_state es;
 	/** mysql connector state specify the it's state weither it's IDLE ready for a new connection, is trying to connect to a server, is trying to send data to a server, sent data to the server already, or has an error during one of its attempts.*/
 	enum state connector_state;
-	/** keeping the state of the SQL Client session */
-	enum sqlc_session_state state; ///<
+	/** keeping the state of the MYSQL Client session */
+	enum mysqlc_session_state state; ///<
 	/** 
 	 * Pointer to constant character string for the server name.
 	 * @warning currenty only supports the Server IP address as a string e.g "192.168.1.172"
@@ -225,36 +225,36 @@ struct sql_connector{
 	char columns_read;
 };
 /**
- * sql_cd is a structure wraps up a single mysql connector (client).
+ * mysql_cd is a structure wraps up a single mysql connector (client).
  * This implementation for LWIP MySQL connector follows a sockets like convention, each connector has it's own
  * descriptor which is an integer representing an ID for the connector and the user application can track it's connector
  *  status and send commands using this descriptor (ID). 
 */
-struct sql_cd{
+struct mysql_cd{
 	/** The descriptor (ID) for a MySQL connector */
-	sqlc_descriptor* sqlc_d;
+	mysqlc_descriptor* mysqlc_d;
 	/** pointer to an allocated MySQL connector structure */
-	struct sql_connector* sqlc;
+	struct mysql_connector* mysqlc;
 };
 
 /** 
- * Array of sqlc_d structure for a fixed number of MySQL connectors(clients) 
+ * Array of mysqlc_d structure for a fixed number of MySQL connectors(clients) 
  * the number of used MySQL connectors by the application is meant to be fixed,
- * and is specified by the MAX_SQL_CONNECTORS, this is useful for a low memory controllers to 
+ * and is specified by the MAX_MYSQL_CONNECTORS, this is useful for a low memory controllers to 
  * limit number of simultanous connections made by the application.
 */
-static struct sql_cd sqlcd_array[MAX_SQL_CONNECTORS];
+static struct mysql_cd mysqlcd_array[MAX_MYSQL_CONNECTORS];
 
-err_t sqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len);
-void sqlc_err(void *arg, err_t err);
-err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err);
-err_t sqlc_poll(void *arg, struct tcp_pcb *pcb);
-err_t sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *pbuf, err_t err);
-static void sqlc_cleanup(struct sql_connector *s);
+err_t mysqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len);
+void mysqlc_err(void *arg, err_t err);
+err_t mysqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err);
+err_t mysqlc_poll(void *arg, struct tcp_pcb *pcb);
+err_t mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *pbuf, err_t err);
+static void mysqlc_cleanup(struct mysql_connector *s);
 static u16_t
-sqlc_close(struct sql_connector *s);
+mysqlc_close(struct mysql_connector *s);
 
-err_t sqlc_send(struct tcp_pcb *pcb,struct sql_connector* s);
+err_t mysqlc_send(struct tcp_pcb *pcb,struct mysql_connector* s);
 void store_int(char *buff, u32_t value, u16_t size);
 u16_t get_lcb_len(char* buffer,u16_t offset);
 u16_t read_int(char* buffer,u16_t offset, u16_t size);
@@ -272,7 +272,7 @@ u16_t read_int(char* buffer,u16_t offset, u16_t size);
  *
  *  @return  pointer to the allocated string - String from the buffer
  */
-char * mysqlc_read_string(struct sql_connector* s,u16_t *offset) {
+char * mysqlc_read_string(struct mysql_connector* s,u16_t *offset) {
   u16_t len_bytes = get_lcb_len(&((char*)(s->p->payload))[s->p_index] ,((char*)(s->p->payload))[s->p_index + *offset]);
   u16_t len = read_int(&((char*)(s->p->payload))[s->p_index],*offset, len_bytes);
   char *str = (char *)mem_malloc(len+1);
@@ -290,7 +290,7 @@ char * mysqlc_read_string(struct sql_connector* s,u16_t *offset) {
  *         1: error, No Payload found to read from or all packets has been read already.
  * 
  */
-u16_t mysqlc_read_packet(struct sql_connector* s){
+u16_t mysqlc_read_packet(struct mysql_connector* s){
 	if(s->p->payload){
 		//u16_t length  = read_int(s->p->payload,s->p_index, 3);
 		 u16_t length = ((char*)s->p->payload)[s->p_index];
@@ -330,7 +330,7 @@ u16_t mysqlc_read_packet(struct sql_connector* s){
  * 
  * 
 */
-void mysqlc_free_columns_buffer(struct sql_connector* s) {
+void mysqlc_free_columns_buffer(struct mysql_connector* s) {
   // clear the columns
   for (u16_t f = 0; f < MAX_FIELDS; f++) {
     if (s->columns.fields[f] != NULL) {
@@ -361,7 +361,7 @@ void mysqlc_free_columns_buffer(struct sql_connector* s) {
  * 
  * 
  */
-void mysqlc_free_row_buffer(struct sql_connector* s) {
+void mysqlc_free_row_buffer(struct mysql_connector* s) {
   // clear the row
   for (u16_t f = 0; f < MAX_FIELDS; f++) {
     if (s->row.values[f] != NULL) {
@@ -387,7 +387,7 @@ void mysqlc_free_row_buffer(struct sql_connector* s) {
  *
  * @return integer - MYSQL_EOF_PACKET if no more rows, 0 if more rows available
 */
-u16_t mysqlc_get_row(struct sql_connector* s) {
+u16_t mysqlc_get_row(struct mysql_connector* s) {
   // Read row packets
 	u16_t i = 0;
 //	while (i < s->num_cols){
@@ -407,14 +407,14 @@ u16_t mysqlc_get_row(struct sql_connector* s) {
  * This method is used to read the row column values
  * from the read buffer and store them in an allocated buffers,
  * then store those allocated buffers pointers in the row structure
- * in the sql connector structure.
+ * in the mysql connector structure.
  * 
  * @param  s: pointer to mysql connector(client) structure.
  * 
  * @return 0: no errors - read Done
  *         MYSQL_EOF_PACKET: error end of frame - no more rows to read.
  */
-u16_t mysqlc_get_row_values(struct sql_connector* s) {
+u16_t mysqlc_get_row_values(struct mysql_connector* s) {
   u16_t res = 0;
   u16_t offset = 0;
 
@@ -468,7 +468,7 @@ u16_t mysqlc_get_row_values(struct sql_connector* s) {
  * @return 0: field is read successfully.\n
  *         MYSQL_EOF_PACKET: error, no more packets in the server payload to read from.
  */
-u16_t mysqlc_get_field(struct sql_connector* s,field_struct *fs) {
+u16_t mysqlc_get_field(struct mysql_connector* s,field_struct *fs) {
   u16_t len_bytes;
   u16_t len;
   u16_t offset;
@@ -499,14 +499,14 @@ u16_t mysqlc_get_field(struct sql_connector* s,field_struct *fs) {
  * 
  * This method is used to read the field names, values, types, etc.
  * from the read buffer in a memory allocated buffers and store their pointers in the columns structure
- * in the sql connector structure.
+ * in the mysql connector structure.
  * 
  * @param  s: pointer to mysql connector(client) structure.
  * 
  * @return  1: read successful.\n
  *          0: error reading fields ( memory issue or no more packets to get frames from) 
  */
-char mysqlc_get_fields(struct sql_connector* s)
+char mysqlc_get_fields(struct mysql_connector* s)
 {
   u16_t num_fields = 0;
   u16_t res = 0;
@@ -543,16 +543,16 @@ char mysqlc_get_fields(struct sql_connector* s)
  *         NULL: error happened (either the descriptor is not connected to a mysql connector or the server hasn't given back data (no fields associated with this connector found)).
  *
 */
-column_names* mysqlc_get_columns(sqlc_descriptor* d) {
+column_names* mysqlc_get_columns(mysqlc_descriptor* d) {
 	u16_t i = 0 ;
-	for (i = 0 ; i < MAX_SQL_CONNECTORS; i++)
+	for (i = 0 ; i < MAX_MYSQL_CONNECTORS; i++)
 	{
-		if(sqlcd_array[i].sqlc_d == d && sqlcd_array[i].sqlc != NULL)
+		if(mysqlcd_array[i].mysqlc_d == d && mysqlcd_array[i].mysqlc != NULL)
 			break;
 	}
-	if(i == MAX_SQL_CONNECTORS)
+	if(i == MAX_MYSQL_CONNECTORS)
 		return NULL ;
-	struct sql_connector* s = sqlcd_array[i].sqlc;
+	struct mysql_connector* s = mysqlcd_array[i].mysqlc;
 	mysqlc_free_columns_buffer(s);
 	mysqlc_free_row_buffer(s);
 	s->num_cols = 0;
@@ -576,16 +576,16 @@ column_names* mysqlc_get_columns(sqlc_descriptor* d) {
  * converting them to a specific type or as a string.\n
  *         NULL: error happened (either the descriptor is not connected to a mysql connector or the server hasn't given back data (no rows associated with this connector found or empty table)).
 */
-row_values* mysqlc_get_next_row(sqlc_descriptor* d) {
+row_values* mysqlc_get_next_row(mysqlc_descriptor* d) {
 	u16_t i = 0 ;
-	for (i = 0 ; i < MAX_SQL_CONNECTORS; i++)
+	for (i = 0 ; i < MAX_MYSQL_CONNECTORS; i++)
 	{
-		if(sqlcd_array[i].sqlc_d == d && sqlcd_array[i].sqlc != NULL)
+		if(mysqlcd_array[i].mysqlc_d == d && mysqlcd_array[i].mysqlc != NULL)
 			break;
 	}
-	if(i == MAX_SQL_CONNECTORS)
+	if(i == MAX_MYSQL_CONNECTORS)
 		return NULL ;
-	struct sql_connector* s = sqlcd_array[i].sqlc;
+	struct mysql_connector* s = mysqlcd_array[i].mysqlc;
 
   u16_t res = 0;
 
@@ -607,7 +607,7 @@ row_values* mysqlc_get_next_row(sqlc_descriptor* d) {
  * 
 */
 
-void Encrypt_SHA1_init(struct sql_connector* s) {
+void Encrypt_SHA1_init(struct mysql_connector* s) {
   memcpy(s->sha1_state.b,sha1InitState,HASH_LENGTH);
   s->byteCount = 0;
   s->bufferOffset = 0;
@@ -633,7 +633,7 @@ u32_t Encrypt_SHA1_rol32(u32_t number, uint8_t bits) {
  * hash its sha1_buffer block.
  * 
 */
-void Encrypt_SHA1_hashBlock(struct sql_connector* s) {
+void Encrypt_SHA1_hashBlock(struct mysql_connector* s) {
   // SHA1 only for now
   uint8_t i;
   u32_t a,b,c,d,e,t;
@@ -682,7 +682,7 @@ void Encrypt_SHA1_hashBlock(struct sql_connector* s) {
  * 
  * @param data single byte to be added to the sha1_buffer to be hashed
 */
-void Encrypt_SHA1_addUncounted(struct sql_connector* s,uint8_t data) {
+void Encrypt_SHA1_addUncounted(struct mysql_connector* s,uint8_t data) {
   s->sha1_buffer.b[s->bufferOffset ^ 3] = data;
   s->bufferOffset++;
   if (s->bufferOffset == BLOCK_LENGTH) {
@@ -706,7 +706,7 @@ void Encrypt_SHA1_addUncounted(struct sql_connector* s,uint8_t data) {
  * 
  * 
 */
-void Encrypt_SHA1_write(struct sql_connector* s,uint8_t data) {
+void Encrypt_SHA1_write(struct mysql_connector* s,uint8_t data) {
   ++s->byteCount;
   Encrypt_SHA1_addUncounted(s,data);
 }
@@ -725,7 +725,7 @@ void Encrypt_SHA1_write(struct sql_connector* s,uint8_t data) {
  * 
  * 
 */
-void Encrypt_SHA1_write_arr(struct sql_connector* s,const uint8_t* data, u16_t length) {
+void Encrypt_SHA1_write_arr(struct mysql_connector* s,const uint8_t* data, u16_t length) {
   for (u16_t i=0; i<length; i++) {
 	  Encrypt_SHA1_write(s,data[i]);
   }
@@ -742,7 +742,7 @@ void Encrypt_SHA1_write_arr(struct sql_connector* s,const uint8_t* data, u16_t l
  * @param data pointer to a null teriminated string to be added to the sha1_buffer
  * 
 */
-void Encrypt_SHA1_print(struct sql_connector* s,const uint8_t* data){
+void Encrypt_SHA1_print(struct mysql_connector* s,const uint8_t* data){
 	u16_t length = strlen(data);
 	Encrypt_SHA1_write_arr(s,data,length);
 }
@@ -757,7 +757,7 @@ void Encrypt_SHA1_print(struct sql_connector* s,const uint8_t* data){
  * 
  * 
 */
-void Encrypt_SHA1_pad(struct sql_connector* s) {
+void Encrypt_SHA1_pad(struct mysql_connector* s) {
   // Implement SHA-1 padding (fips180-2 ยง5.1.1)
 
   // Pad with 0x80 followed by 0x00 until the end of the block
@@ -787,7 +787,7 @@ void Encrypt_SHA1_pad(struct sql_connector* s) {
  * @return pointer to the hashed buffer (20 characters).
  * 
 */
-uint8_t* Encrypt_SHA1_result(struct sql_connector* s) {
+uint8_t* Encrypt_SHA1_result(struct mysql_connector* s) {
   // Pad to complete the last block
 	Encrypt_SHA1_pad(s);
 
@@ -812,73 +812,73 @@ uint8_t* Encrypt_SHA1_result(struct sql_connector* s) {
  * @param d: pointer to a mysql connector descriptor structure provided by the application
  * 
  * @return 0: No errors and the connector structure is created successfully.\n
- * 				 1: error creating the connector structure (either exceeded MAX_SQL_CONNECTORS,\n
+ * 				 1: error creating the connector structure (either exceeded MAX_MYSQL_CONNECTORS,\n
  * the descriptor is already linked to another connector or memory allocation for the connector structure failed).
  * 
  */
-u16_t sqlc_create( sqlc_descriptor* d ){
+u16_t mysqlc_create( mysqlc_descriptor* d ){
 	u16_t i = 0 ;
-	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
-		if(sqlcd_array[i].sqlc_d == d)
+	for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
+		if(mysqlcd_array[i].mysqlc_d == d)
 			return 1 ;
 	}
-	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
-		if(sqlcd_array[i].sqlc_d == NULL && sqlcd_array[i].sqlc == NULL)
+	for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
+		if(mysqlcd_array[i].mysqlc_d == NULL && mysqlcd_array[i].mysqlc == NULL)
 			break;
 	}
-	if(i == MAX_SQL_CONNECTORS)
+	if(i == MAX_MYSQL_CONNECTORS)
 		return 1 ;
-	sqlcd_array[i].sqlc = mem_malloc(sizeof(struct sql_connector));
-	if(sqlcd_array[i].sqlc == NULL)
+	mysqlcd_array[i].mysqlc = mem_malloc(sizeof(struct mysql_connector));
+	if(mysqlcd_array[i].mysqlc == NULL)
 		return 1 ;
-	memset(sqlcd_array[i].sqlc,0,sizeof(struct sql_connector));
-	sqlcd_array[i].sqlc->connected = 0 ;
-	sqlcd_array[i].sqlc->connector_state = CONNECTOR_STATE_IDLE ;
-	sqlcd_array[i].sqlc->es = CONNECTOR_ERROR_OK;
-	sqlcd_array[i].sqlc_d = d;
+	memset(mysqlcd_array[i].mysqlc,0,sizeof(struct mysql_connector));
+	mysqlcd_array[i].mysqlc->connected = 0 ;
+	mysqlcd_array[i].mysqlc->connector_state = CONNECTOR_STATE_IDLE ;
+	mysqlcd_array[i].mysqlc->es = CONNECTOR_ERROR_OK;
+	mysqlcd_array[i].mysqlc_d = d;
 	return 0 ;
 }
 
 /** 
- * @brief The actual mysql connect function, called by sqlc_connect and
- * after setting up the sql_connector structure.
+ * @brief The actual mysql connect function, called by mysqlc_connect and
+ * after setting up the mysql_connector structure.
  * 
  * this function tries to connect to a mysql server.
  * 
- * @param sqlc_ptr pointer to the allocated mysql connector structure.
+ * @param mysqlc_ptr pointer to the allocated mysql connector structure.
  * 
  * @return LWIP ERROR Code - ERR_OK : No errors, the client is trying to connect to the server.\n
  *                         - ERR_MEM: Memory allocation error.\n
  *                         - Another LWIP ERROR code returned by the tcp_connect function.
  */
-static err_t sqlc_sendrequest_allocated(struct sql_connector* sqlc_ptr)
+static err_t mysqlc_send_request_allocated(struct mysql_connector* mysqlc_ptr)
 {
 	 struct tcp_pcb *pcb = NULL;
 	 err_t ret_code = ERR_OK,err;
 	 pcb = tcp_new();
 	 if(NULL == pcb)
 	 {
-		 LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_sendrequest_allocated(): calling tcp_new can not allocate memory for PCB.\n\r"));
+		 LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_send_request_allocated(): calling tcp_new can not allocate memory for PCB.\n\r"));
 		 err = ERR_MEM;
 		 goto leave;
 	 }
-	 sqlc_ptr->pcb = pcb;
-	 sqlc_ptr->timer = SQLC_TIMEOUT;
-	 tcp_arg(pcb, sqlc_ptr);
-	 tcp_poll(pcb, sqlc_poll, SQLC_POLL_INTERVAL);
-	 tcp_err(pcb, sqlc_err);
+	 mysqlc_ptr->pcb = pcb;
+	 mysqlc_ptr->timer = MYSQLC_TIMEOUT;
+	 tcp_arg(pcb, mysqlc_ptr);
+	 tcp_poll(pcb, mysqlc_poll, MYSQLC_POLL_INTERVAL);
+	 tcp_err(pcb, mysqlc_err);
 
-	 sqlc_ptr->remote_ipaddr.addr = ipaddr_addr(sqlc_ptr->hostname);
-	 err = sqlc_ptr->remote_ipaddr.addr == IPADDR_NONE ? ERR_ARG : ERR_OK;
+	 mysqlc_ptr->remote_ipaddr.addr = ipaddr_addr(mysqlc_ptr->hostname);
+	 err = mysqlc_ptr->remote_ipaddr.addr == IPADDR_NONE ? ERR_ARG : ERR_OK;
 	 if(err == ERR_OK){
-	   ret_code = tcp_connect(pcb, &sqlc_ptr->remote_ipaddr, sqlc_ptr->port, sqlc_connected);
+	   ret_code = tcp_connect(pcb, &mysqlc_ptr->remote_ipaddr, mysqlc_ptr->port, mysqlc_connected);
 		 if(ERR_OK != ret_code)
 		 {
-				 LWIP_DEBUGF(SQLC_DEBUG, ("tcp_connect():no memory is available for enqueueing the SYN segment %d\n\r",ret_code));
+				 LWIP_DEBUGF(MYSQLC_DEBUG, ("tcp_connect():no memory is available for enqueueing the SYN segment %d\n\r",ret_code));
 				 goto deallocate_and_leave;
 		 }
 	 }else if (err != ERR_INPROGRESS) {
-		  LWIP_DEBUGF(SQLC_DEBUG, ("dns_gethostbyname failed: %d\r\n", (u16_t)err));
+		  LWIP_DEBUGF(MYSQLC_DEBUG, ("dns_gethostbyname failed: %d\r\n", (u16_t)err));
 		  goto deallocate_and_leave;
 	 }
 
@@ -889,7 +889,7 @@ deallocate_and_leave:
     tcp_close(pcb);
   }
 leave:
-//  mem_free(sqlc_ptr);
+//  mem_free(mysqlc_ptr);
   /* no need to call the callback here since we return != ERR_OK */
   return err;
 }
@@ -912,29 +912,29 @@ leave:
  * a connection).
  *
  */
-u16_t sqlc_connect(sqlc_descriptor* d ,const char* hostname ,u16_t port, const char* username ,const char* password )
+u16_t mysqlc_connect(mysqlc_descriptor* d ,const char* hostname ,u16_t port, const char* username ,const char* password )
 {
 	u16_t i = 0 ;
-	for (i = 0 ; i < MAX_SQL_CONNECTORS; i++)
+	for (i = 0 ; i < MAX_MYSQL_CONNECTORS; i++)
 	{
-		if(sqlcd_array[i].sqlc_d == d && sqlcd_array[i].sqlc != NULL)
+		if(mysqlcd_array[i].mysqlc_d == d && mysqlcd_array[i].mysqlc != NULL)
 			break;
 	}
-	if(i == MAX_SQL_CONNECTORS)
+	if(i == MAX_MYSQL_CONNECTORS)
 		return 1 ;
-	struct sql_connector* sqlc_ptr = sqlcd_array[i].sqlc;
-	if(sqlc_ptr->connected)
+	struct mysql_connector* mysqlc_ptr = mysqlcd_array[i].mysqlc;
+	if(mysqlc_ptr->connected)
 		return 1 ;
-	sqlc_ptr->hostname = hostname;
-	sqlc_ptr->username = username;
-	sqlc_ptr->password = password;
-	sqlc_ptr->port = port;
+	mysqlc_ptr->hostname = hostname;
+	mysqlc_ptr->username = username;
+	mysqlc_ptr->password = password;
+	mysqlc_ptr->port = port;
 
-	err_t err = sqlc_sendrequest_allocated(sqlc_ptr);
+	err_t err = mysqlc_send_request_allocated(mysqlc_ptr);
 	if(err != ERR_OK)
 		return 1;
-	sqlc_ptr->connector_state = CONNECTOR_STATE_CONNECTING;
-	sqlc_ptr->es = CONNECTOR_ERROR_OK;
+	mysqlc_ptr->connector_state = CONNECTOR_STATE_CONNECTING;
+	mysqlc_ptr->es = CONNECTOR_ERROR_OK;
 	return 0 ;
 }
 
@@ -948,30 +948,30 @@ u16_t sqlc_connect(sqlc_descriptor* d ,const char* hostname ,u16_t port, const c
  * the connector is busy, or is not connected to any server).
  * 
 */
-u16_t sqlc_disconnect(sqlc_descriptor*d)
+u16_t mysqlc_disconnect(mysqlc_descriptor*d)
 {
 	u16_t i = 0 ;
-	for (i = 0 ; i < MAX_SQL_CONNECTORS; i++)
+	for (i = 0 ; i < MAX_MYSQL_CONNECTORS; i++)
 	{
-		if(sqlcd_array[i].sqlc_d == d && sqlcd_array[i].sqlc != NULL)
+		if(mysqlcd_array[i].mysqlc_d == d && mysqlcd_array[i].mysqlc != NULL)
 			break;
 	}
-	if(i == MAX_SQL_CONNECTORS)
+	if(i == MAX_MYSQL_CONNECTORS)
 		return 1 ;
 	/* Don't disconnect a busy connector */
-	if(sqlcd_array[i].sqlc->connector_state != CONNECTOR_STATE_IDLE){
+	if(mysqlcd_array[i].mysqlc->connector_state != CONNECTOR_STATE_IDLE){
 		return 1 ;
 	}
-	if(sqlc_close(sqlcd_array[i].sqlc))
+	if(mysqlc_close(mysqlcd_array[i].mysqlc))
 		return 1 ;
-	if(sqlcd_array[i].sqlc->connected){
-		sqlcd_array[i].sqlc->connected = 0 ;
-		sqlcd_array[i].sqlc->connector_state = CONNECTOR_STATE_IDLE ;
-		sqlcd_array[i].sqlc->es = CONNECTOR_ERROR_OK;
-		sqlcd_array[i].sqlc->hostname = NULL;
-		sqlcd_array[i].sqlc->port = SQLC_DEFAULT_PORT;
-		sqlcd_array[i].sqlc->username = NULL;
-		sqlcd_array[i].sqlc->password = NULL;
+	if(mysqlcd_array[i].mysqlc->connected){
+		mysqlcd_array[i].mysqlc->connected = 0 ;
+		mysqlcd_array[i].mysqlc->connector_state = CONNECTOR_STATE_IDLE ;
+		mysqlcd_array[i].mysqlc->es = CONNECTOR_ERROR_OK;
+		mysqlcd_array[i].mysqlc->hostname = NULL;
+		mysqlcd_array[i].mysqlc->port = MYSQLC_DEFAULT_PORT;
+		mysqlcd_array[i].mysqlc->username = NULL;
+		mysqlcd_array[i].mysqlc->password = NULL;
 		return 0 ;
 	}
 	return 1 ;
@@ -986,20 +986,20 @@ u16_t sqlc_disconnect(sqlc_descriptor*d)
  *         1 : error deleting the mysql connector (either the descriptor is not related to any connection ,the connector needed to be deleted is already connected to the server or trying to connect to the server).
  * */
 
-u16_t sqlc_delete(sqlc_descriptor*d)
+u16_t mysqlc_delete(mysqlc_descriptor*d)
 {
 	u16_t i = 0 ;
-	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
-		if(sqlcd_array[i].sqlc_d == d)
+	for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
+		if(mysqlcd_array[i].mysqlc_d == d)
 			break;
 	}
-	if(i == MAX_SQL_CONNECTORS)
+	if(i == MAX_MYSQL_CONNECTORS)
 		return 1 ;
-	if(sqlcd_array[i].sqlc->connected || sqlcd_array[i].sqlc->connector_state != CONNECTOR_STATE_IDLE)
+	if(mysqlcd_array[i].mysqlc->connected || mysqlcd_array[i].mysqlc->connector_state != CONNECTOR_STATE_IDLE)
 		return 1 ;
-	mem_free(sqlcd_array[i].sqlc);
-	sqlcd_array[i].sqlc = NULL;
-	sqlcd_array[i].sqlc_d = NULL;
+	mem_free(mysqlcd_array[i].mysqlc);
+	mysqlcd_array[i].mysqlc = NULL;
+	mysqlcd_array[i].mysqlc_d = NULL;
 	return 0 ;
 }
 
@@ -1018,16 +1018,16 @@ u16_t sqlc_delete(sqlc_descriptor*d)
  *         1: error, the descriptor provided is not linked to any connector.
  * 
  */
-u16_t sqlc_get_state(sqlc_descriptor*d,enum state* state)
+u16_t mysqlc_get_state(mysqlc_descriptor*d,enum state* state)
 {
 	u16_t i ;
-	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
-		if(sqlcd_array[i].sqlc_d == d)
+	for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
+		if(mysqlcd_array[i].mysqlc_d == d)
 			break;
 	}
-	if(i == MAX_SQL_CONNECTORS)
+	if(i == MAX_MYSQL_CONNECTORS)
 		return 1 ;
-	*state = sqlcd_array[i].sqlc->connector_state;
+	*state = mysqlcd_array[i].mysqlc->connector_state;
 	return 0 ;
 }
 
@@ -1043,16 +1043,16 @@ u16_t sqlc_get_state(sqlc_descriptor*d,enum state* state)
  * 
  * 
 */
-u16_t sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es)
+u16_t mysqlc_get_error_state(mysqlc_descriptor*d,enum error_state* es)
 {
 	u16_t i ;
-	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
-		if(sqlcd_array[i].sqlc_d == d)
+	for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
+		if(mysqlcd_array[i].mysqlc_d == d)
 			break;
 	}
-	if(i == MAX_SQL_CONNECTORS)
+	if(i == MAX_MYSQL_CONNECTORS)
 		return 1 ;
-	*es = sqlcd_array[i].sqlc->es;
+	*es = mysqlcd_array[i].mysqlc->es;
 	return 0 ;
 }
 
@@ -1064,16 +1064,16 @@ u16_t sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es)
  *         1: Error providing the connection status (the descriptor is not linked to any connector)
  * 
  */
-u16_t sqlc_is_connected(sqlc_descriptor*d, char* connected)
+u16_t mysqlc_is_connected(mysqlc_descriptor*d, char* connected)
 {
 	u16_t i ;
-	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
-		if(sqlcd_array[i].sqlc_d == d)
+	for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
+		if(mysqlcd_array[i].mysqlc_d == d)
 			break;
 	}
-	if(i == MAX_SQL_CONNECTORS)
+	if(i == MAX_MYSQL_CONNECTORS)
 		return 1 ;
-	*connected = sqlcd_array[i].sqlc->connected;
+	*connected = mysqlcd_array[i].mysqlc->connected;
 	return 0 ;
 }
 
@@ -1083,20 +1083,20 @@ u16_t sqlc_is_connected(sqlc_descriptor*d, char* connected)
  * 
  * @param d: pointer to mysql connector descriptor linked to the mysql connector to send the query on.
  * @param query: a character array containing the mysql commands.
- * @return: 0: no errors , and the lwip is trying to send your commands to the server (check the connector state sqlc_get_state()).\n
- *         1: error while trying to send the commands (either the descriptor is not linked to a mysql connector, the connected linked to the provided descriptor is not connected to a server, the connector state is not IDLE, memory allocation for query buffer failed ,or lwip state error (check sqlc_send())).
+ * @return: 0: no errors , and the lwip is trying to send your commands to the server (check the connector state mysqlc_get_state()).\n
+ *         1: error while trying to send the commands (either the descriptor is not linked to a mysql connector, the connected linked to the provided descriptor is not connected to a server, the connector state is not IDLE, memory allocation for query buffer failed ,or lwip state error (check mysqlc_send())).
  * 
  * 
  */
-u16_t sqlc_execute(sqlc_descriptor*d,const char* query){
+u16_t mysqlc_execute(mysqlc_descriptor*d,const char* query){
 	u16_t i ;
-	for (i = 0 ; i<MAX_SQL_CONNECTORS ;i++){
-		if(sqlcd_array[i].sqlc_d == d)
+	for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
+		if(mysqlcd_array[i].mysqlc_d == d)
 			break;
 	}
-	if(i == MAX_SQL_CONNECTORS)
+	if(i == MAX_MYSQL_CONNECTORS)
 		return 1 ;
-	struct sql_connector* s = sqlcd_array[i].sqlc;
+	struct mysql_connector* s = mysqlcd_array[i].mysqlc;
 
 	if(!s->connected)
 		return 1 ;
@@ -1118,7 +1118,7 @@ u16_t sqlc_execute(sqlc_descriptor*d,const char* query){
 	s->payload[3] = 0x00;
 	s->payload[4] = 0x03;  // command packet
 	s->payload_len = query_len + 5;
-	if(sqlc_send(s->pcb,s) != ERR_OK)
+	if(mysqlc_send(s->pcb,s) != ERR_OK)
 		return 1;
 	s->connector_state = CONNECTOR_STATE_SENDING;
 	s->es = CONNECTOR_ERROR_OK;
@@ -1129,21 +1129,21 @@ u16_t sqlc_execute(sqlc_descriptor*d,const char* query){
  * connection is established with the server.
  * 
  * @param arg pointer to the chosen argument passed to tcp_arg(), in our case is a
- * pointer to the sql connector structure used in this session.
+ * pointer to the mysql connector structure used in this session.
  * @param pcb the pcb where the connection is established with.
  * @param err the TCP error state.
  * 
  * @return err_t LWIP error Type in our case is always ERR_OK. 
  * 
 */
-err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err)
+err_t mysqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err)
  {
      err_t ret_code = ERR_OK;
-     struct sql_connector* sqlc_ptr = arg;
+     struct mysql_connector* mysqlc_ptr = arg;
 	 LWIP_UNUSED_ARG(err); /* for some compilers warnings. */
-	 sqlc_ptr->timer = SQLC_TIMEOUT;
-	 tcp_recv(pcb, sqlc_recv);
-	 sqlc_ptr->state = SQLC_CONNECTED ;
+	 mysqlc_ptr->timer = MYSQLC_TIMEOUT;
+	 tcp_recv(pcb, mysqlc_recv);
+	 mysqlc_ptr->state = MYSQLC_CONNECTED ;
 
 	 return ret_code;
 }
@@ -1152,55 +1152,55 @@ err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err)
  * happens during a connection session.
  * 
  * @param arg pointer to the chosen argument passed to tcp_arg(), in our case is a
- * pointer to the sql connector structure used in this session.
+ * pointer to the mysql connector structure used in this session.
  * 
  * @param err LWIP TCP error accured.
  * 
 */
-void sqlc_err(void *arg, err_t err)
+void mysqlc_err(void *arg, err_t err)
  {
-	 struct sql_connector *s = arg;
-	 LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_err():error at client : %d\n\r",err));
-	 if(s->connector_state == CONNECTOR_STATE_CONNECTING  && (s->state <= SQLC_SENT)){
+	 struct mysql_connector *s = arg;
+	 LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_err():error at client : %d\n\r",err));
+	 if(s->connector_state == CONNECTOR_STATE_CONNECTING  && (s->state <= MYSQLC_SENT)){
 		 s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
 		 s->es = CONNECTOR_ERROR_TCP_ERROR;
-		 s->state = SQLC_CLOSED;
+		 s->state = MYSQLC_CLOSED;
 	 }else if (s->connected){
 		 s->connected = 0 ;
 	 }
 	 s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
 	 s->es = CONNECTOR_ERROR_TCP_ERROR;
-	 s->state = SQLC_CLOSED;
+	 s->state = MYSQLC_CLOSED;
 	 //@ TODO handle other events, basically we check the connector state and the session state...
-	 sqlc_cleanup(s);
+	 mysqlc_cleanup(s);
 }
 /**
  * @brief Raw API TCP poll callback.
  * 
  * @param arg pointer to the chosen argument passed to tcp_arg(), in our case is a
- * pointer to the sql connector structure used in this session.
+ * pointer to the mysql connector structure used in this session.
  * 
  * @param pcb pointer to the TCP PCB linked to that connection
  * 
 */
-err_t sqlc_poll(void *arg, struct tcp_pcb *pcb)
+err_t mysqlc_poll(void *arg, struct tcp_pcb *pcb)
 {
     err_t ret_code = ERR_OK,err;
-	LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_poll()\r\n"));
+	LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll()\r\n"));
 	if (arg != NULL) {
-		struct sql_connector *s = arg;
-		LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_poll(): %d\n\r",s->timer));
+		struct mysql_connector *s = arg;
+		LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll(): %d\n\r",s->timer));
 		if(s->connector_state == CONNECTOR_STATE_CONNECTING){
 			if (s->timer != 0) {
 				s->timer--;
 			}
 			 /* idle timer, close connection if timed out */
 			if (s->timer == 0) {
-				LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_poll: connection timed out, closing\n\r"));
-				sqlc_close(s); // TODO handle it's return...
+				LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll: connection timed out, closing\n\r"));
+				mysqlc_close(s); // TODO handle it's return...
 				s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
 				s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
-				s->state = SQLC_CLOSED;
+				s->state = MYSQLC_CLOSED;
 				ret_code = ERR_ABRT;
 			}
 		}else if(s->connector_state == CONNECTOR_STATE_SENDING)
@@ -1217,7 +1217,7 @@ err_t sqlc_poll(void *arg, struct tcp_pcb *pcb)
 		/// @TODO handle other events..
 	}
 	else{
-		LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_poll: something wrong\n\r"));
+		LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll: something wrong\n\r"));
 	}
  return ret_code;
 }
@@ -1229,12 +1229,12 @@ err_t sqlc_poll(void *arg, struct tcp_pcb *pcb)
  * 
 */
 static void
-sqlc_cleanup(struct sql_connector *s)
+mysqlc_cleanup(struct mysql_connector *s)
 {
-	LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_cleanup()\r\n"));
+	LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_cleanup()\r\n"));
 	if(s->pcb){
 		/* try to clean up the pcb if not already deallocated*/
-		//sqlc_close(s);
+		//mysqlc_close(s);
 		s->pcb = NULL;
 	}
 	if(s->payload){
@@ -1266,9 +1266,9 @@ sqlc_cleanup(struct sql_connector *s)
  * 
 */
 static u16_t
-sqlc_close(struct sql_connector *s)
+mysqlc_close(struct mysql_connector *s)
 {
-	LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_close()\r\n"));
+	LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_close()\r\n"));
 	tcp_arg(s->pcb, NULL);
 	tcp_poll(s->pcb,NULL,0);  // may be wrong ?
 	tcp_sent(s->pcb, NULL);
@@ -1278,13 +1278,13 @@ sqlc_close(struct sql_connector *s)
 	if (tcp_close(s->pcb) == ERR_OK) {
 		s->connected = 0 ;
 		s->pcb = NULL;
-		sqlc_cleanup(s);
+		mysqlc_cleanup(s);
 	  return 0 ;
 	}
 	/* close failed, set back arg */
 	tcp_arg(s->pcb, s);
 	s->connected = 0 ;
-	sqlc_cleanup(s);
+	mysqlc_cleanup(s);
 	return 1;
 }
 /**
@@ -1297,7 +1297,7 @@ sqlc_close(struct sql_connector *s)
  * @param p pointer to the LWIP buffer holding the server handshake packet payload.
  * 
 */
-void parse_handshake_packet(struct sql_connector* s,struct pbuf *p)
+void parse_handshake_packet(struct mysql_connector* s,struct pbuf *p)
 {
 	u16_t len = strlen(&(((char*)p->payload)[5]));
 	s->server_version = (char*)mem_malloc(len + 1);
@@ -1317,7 +1317,7 @@ void parse_handshake_packet(struct sql_connector* s,struct pbuf *p)
  * the server.
  * 
  * If the payload is larger than the TCP send buffer, then it sends part of the buffer and the remaining 
- * is sent on the sql_sent callback.
+ * is sent on the mysql_sent callback.
  * 
  * @param pcb pointer to the TCP's PCB writing the data on
  * @param s pointer to the mysql connector structure holding the payload
@@ -1326,22 +1326,22 @@ void parse_handshake_packet(struct sql_connector* s,struct pbuf *p)
  * ERR_OK if the data is written successfully.
  *
 */
-err_t sqlc_send(struct tcp_pcb *pcb,struct sql_connector* s){
+err_t mysqlc_send(struct tcp_pcb *pcb,struct mysql_connector* s){
 	u16_t len ;
 	err_t ret_code = ERR_OK,err = ERR_OK;
 	len=s->payload_len - s->payload_sent;
 	if(len > tcp_sndbuf(pcb)){
-		LWIP_DEBUGF(SQLC_DEBUG,("sqlc_send: request length is Larger than max amount%d\n\r",err));
+		LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_send: request length is Larger than max amount%d\n\r",err));
 		len = tcp_sndbuf(pcb);
 	}
-	LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_send: TCP write: %d\r\n",len));
+	LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_send: TCP write: %d\r\n",len));
 	err =  tcp_write(pcb, s->payload, len, 0);
 	if (err != ERR_OK) {
-		LWIP_DEBUGF(SQLC_DEBUG,("sqlc_send: error writing! %d\n\r",err));
+		LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_send: error writing! %d\n\r",err));
 		ret_code = err ;
 		return ret_code;
 	}
-	tcp_sent(pcb, sqlc_sent);
+	tcp_sent(pcb, mysqlc_sent);
 	return ret_code;
 }
 /**
@@ -1357,7 +1357,7 @@ err_t sqlc_send(struct tcp_pcb *pcb,struct sql_connector* s){
  *          0: Error, the provided password is empty or is not a NULL terminated string.
  * 
 */
-char scramble_password(struct sql_connector* s,const char* password , char* pwd_hash)
+char scramble_password(struct mysql_connector* s,const char* password , char* pwd_hash)
 {
 	char *digest;
 	char hash1[20];
@@ -1440,10 +1440,10 @@ void store_int(char *buff, u32_t value, u16_t size) {
  * 
  * @return err_t LWIP Error code :\n
  * 							ERR_MEM memory allocation error while creating the sending buffer.\n
- *              Another LWIP error while sending the packet through the LWIP Stacl "sqlc_send()"
+ *              Another LWIP error while sending the packet through the LWIP Stacl "mysqlc_send()"
  * 
 */
-err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb,const char *user,const char *password)
+err_t send_authentication_packet( struct mysql_connector* s, struct tcp_pcb *pcb,const char *user,const char *password)
 {
 	s->payload = (char*) mem_malloc(256);
 	if(s){
@@ -1497,7 +1497,7 @@ err_t send_authentication_packet( struct sql_connector* s, struct tcp_pcb *pcb,c
 	   u16_t p_size = size_send - 4;
 	   store_int(&s->payload[0], p_size, 3);
 	   s->payload[3] = 0x01;
-	   err = sqlc_send(pcb, s);
+	   err = mysqlc_send(pcb, s);
 	   return err;
 	}
 	return ERR_MEM;
@@ -1604,8 +1604,8 @@ u16_t check_ok_packet(char* buffer) {
  *  -----                       ----
  *  1                           field_count, always = 0xff
  *  2                           errno
- *  1                           (sqlstate marker), always '#'
- *  5                           sqlstate (5 characters)
+ *  1                           (mysqlstate marker), always '#'
+ *  5                           mysqlstate (5 characters)
  *  n                           message
  * @endverbatim
  * 
@@ -1615,12 +1615,12 @@ u16_t check_ok_packet(char* buffer) {
  * 
 */
 void parse_error_packet(char* buffer,u16_t packet_len) {
-  LWIP_DEBUGF(SQLC_DEBUG,("Error: "));
-  LWIP_DEBUGF(SQLC_DEBUG,("%d",read_int(buffer,5, 2)));
-  LWIP_DEBUGF(SQLC_DEBUG,(" = "));
+  LWIP_DEBUGF(MYSQLC_DEBUG,("Error: "));
+  LWIP_DEBUGF(MYSQLC_DEBUG,("%d",read_int(buffer,5, 2)));
+  LWIP_DEBUGF(MYSQLC_DEBUG,(" = "));
   for (u16_t i = 0; i < packet_len-9; i++)
-	  LWIP_DEBUGF(SQLC_DEBUG,("%c",(char)buffer[i+13]));
-  LWIP_DEBUGF(SQLC_DEBUG,("."));
+	  LWIP_DEBUGF(MYSQLC_DEBUG,("%c",(char)buffer[i+13]));
+  LWIP_DEBUGF(MYSQLC_DEBUG,("."));
 }
 /**
  * @brief Data has been received on this pcb.
@@ -1645,10 +1645,10 @@ void parse_error_packet(char* buffer,u16_t packet_len) {
  * 
  */
 err_t
-sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
+mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
      err_t ret_code = ERR_OK;
-     struct sql_connector* s = arg;
+     struct mysql_connector* s = arg;
 	 LWIP_UNUSED_ARG(err);
 	 if(p != NULL)
 	 {
@@ -1661,7 +1661,7 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 		 }else {
 				pbuf_cat(s->p, p);
 		 }
-		 if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == SQLC_CONNECTED){
+		 if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == MYSQLC_CONNECTED){
 			 /*
 				* if the connector is just connected to the server, then it parse the handshake packet
  				* and sends the authentication data to the server.
@@ -1682,11 +1682,11 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 				    	 /* Don't Need to close the connection as the server will already abort it on time out ??*/
 				     }else{
 						 s->es = CONNECTOR_ERROR_OK;
-						 s->timer = SQLC_TIMEOUT;
+						 s->timer = MYSQLC_TIMEOUT;
 				     }
 				 }
 			 }
-		 }else if (s->connector_state == CONNECTOR_STATE_CONNECTING && (s->state == SQLC_RECV || s->state == SQLC_SENT)){
+		 }else if (s->connector_state == CONNECTOR_STATE_CONNECTING && (s->state == MYSQLC_RECV || s->state == MYSQLC_SENT)){
 			/*
 			 *  if the connector already have sent authentication data to the server. it parses ok packet,
 			 * if received "OK" packet then the connection is successfull and the connector state is changed to
@@ -1703,13 +1703,13 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 					      // return false; meaning tell the user we don't have the connection , further close it...
 					      s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
 						  s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
-						  sqlc_close(s);
+						  mysqlc_close(s);
 					    }else{
-							LWIP_DEBUGF(SQLC_DEBUG, ("Connected to server version %s\n\r",s->server_version));
+							LWIP_DEBUGF(MYSQLC_DEBUG, ("Connected to server version %s\n\r",s->server_version));
 							mem_free(s->server_version);
 							s->server_version = NULL;
 
-							s->timer = SQLC_TIMEOUT;
+							s->timer = MYSQLC_TIMEOUT;
 							// Tell the application the Good news ?
 							s->connected = 1 ; // TODO handle error , sent , poll events.. if connected
 							s->connector_state = CONNECTOR_STATE_IDLE;
@@ -1738,7 +1738,7 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 					      s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
 						  s->es = CONNECTOR_ERROR_SENDING;
 					    }else{
-							LWIP_DEBUGF(SQLC_DEBUG, ("Received \"Ok packet\" after sending Query \n\r"));
+							LWIP_DEBUGF(MYSQLC_DEBUG, ("Received \"Ok packet\" after sending Query \n\r"));
 
 							// Tell the application the Good news ?
 							s->connector_state = CONNECTOR_STATE_IDLE;
@@ -1755,7 +1755,7 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 			 tcp_recved(pcb, p->tot_len);
 		     //pbuf_free(p);
 		 }
-	     s->state = SQLC_RECV;
+	     s->state = MYSQLC_RECV;
 	 }
 	 else{
 		 /* 
@@ -1763,14 +1763,14 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 			* by the remote server, an error flag CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION is sent to the application 
 			* if the connection is closed while sending data or during negotiation.
 			*/
-		 LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_recv: connection closed by remote host\n\r"));
+		 LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_recv: connection closed by remote host\n\r"));
 		 if((s->connector_state == CONNECTOR_STATE_CONNECTING  )
-				 && (s->state == SQLC_CONNECTED || s->state == SQLC_RECV || s->state == SQLC_SENT)){
+				 && (s->state == MYSQLC_CONNECTED || s->state == MYSQLC_RECV || s->state == MYSQLC_SENT)){
 			 s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
 			 s->es = CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION;
 		 }
-		 sqlc_close(s);
-		 s->state = SQLC_CLOSED;
+		 mysqlc_close(s);
+		 s->state = MYSQLC_CLOSED;
 	 }
 	 return ret_code;
 }
@@ -1779,7 +1779,7 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
  * This means that more data can be sent.
  * 
  * @param arg pointer to the chosen argument passed to tcp_arg(), in our case is a
- * pointer to the sql connector structure used in this session.
+ * pointer to the mysql connector structure used in this session.
  * 
  * @param pcb pointer to the TCP PCB used for that connection
  * @param len length of data acknowleged by the server. 
@@ -1787,29 +1787,29 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
  * @return err_t LWIP error Type, on our case always returns ERR_OK.
  * 
  */
-err_t sqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
+err_t mysqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
 {
-	struct sql_connector * s = arg;
-	LWIP_DEBUGF(SQLC_DEBUG,("sqlc_sent:Done Sending to client : %d",len));
-	LWIP_DEBUGF(SQLC_DEBUG,("\n\r"));
+	struct mysql_connector * s = arg;
+	LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_sent:Done Sending to client : %d",len));
+	LWIP_DEBUGF(MYSQLC_DEBUG,("\n\r"));
 	/* the connector timer for timeout is reset so that the connection will not be closed, not waiting any more*/
-	if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == SQLC_RECV){
+	if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == MYSQLC_RECV){
 
-		s->timer = SQLC_TIMEOUT;
+		s->timer = MYSQLC_TIMEOUT;
 	}else if (s->connector_state == CONNECTOR_STATE_SENDING){
-		s->timer = SQLC_TIMEOUT;
+		s->timer = MYSQLC_TIMEOUT;
 	}
 	
 	s->payload_sent +=len;
 	if(s->payload && s->payload_len - s->payload_sent)
 	{
 		/* if the sending buffer has more data, try to continue sending data */
-		sqlc_send(pcb,s);
+		mysqlc_send(pcb,s);
 	}
 	else
 	{
-		/* if the sending buffer is empty, change the pcb state to SQLC_SENT and clean up allocated buffers */
-		s->state = SQLC_SENT;
+		/* if the sending buffer is empty, change the pcb state to MYSQLC_SENT and clean up allocated buffers */
+		s->state = MYSQLC_SENT;
 		if (s->payload && !(s->payload_len - s->payload_sent)){
 		mem_free(s->payload);
 		s->payload = NULL;

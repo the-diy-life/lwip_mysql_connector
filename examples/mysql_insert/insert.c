@@ -40,12 +40,12 @@
 
  */
 
-#include "sql_connector.h"
+#include "mysql_connector.h"
 #include "./insert.h"
 #include "lwip/debug.h"
 
 
-sqlc_descriptor sd;
+mysqlc_descriptor sd;
 
 // two states (init , loop)
 enum connect_states{
@@ -80,27 +80,27 @@ void insert_periodic_handler(u32_t time)
 	char connected = 0 ;
 	switch(cs){
 		case INIT:
-			ret = sqlc_create(&sd);
+			ret = mysqlc_create(&sd);
 			if(!ret){
 				cs = CONNECT;
 			}
 			break;
 		case CONNECT:
-			ret = sqlc_connect(&sd,hostname,3306,username,password);
+			ret = mysqlc_connect(&sd,hostname,3306,username,password);
 			if(!ret)
 				cs = CONNECTING;
 			else{
-				sqlc_delete(&sd);
+				mysqlc_delete(&sd);
 				cs = INIT;
 			}
 			break;
 		case CONNECTING:
-			ret = sqlc_is_connected(&sd,&connected);
+			ret = mysqlc_is_connected(&sd,&connected);
 			if(ret)
 				cs = INIT;/* No connector then recreate it*/
 			else if(!connected){
 				enum state state;
-				ret = sqlc_get_state(&sd,&state);
+				ret = mysqlc_get_state(&sd,&state);
 				if(ret)
 					cs = INIT;/* No connector then recreate it*/
 				else if(state != CONNECTOR_STATE_CONNECTING){
@@ -113,7 +113,7 @@ void insert_periodic_handler(u32_t time)
 
 			break;
 		case CONNECTED:
-			ret = sqlc_is_connected(&sd,&connected);
+			ret = mysqlc_is_connected(&sd,&connected);
 			if(ret)
 				cs = INIT;
 			else if(!connected){
@@ -122,12 +122,12 @@ void insert_periodic_handler(u32_t time)
 			}else{
 				enum state state;
 				if(time - insert_time >  INSERT_PERIOD){
-					ret = sqlc_get_state(&sd,&state);
+					ret = mysqlc_get_state(&sd,&state);
 					if(!ret){
 						if(state == CONNECTOR_STATE_IDLE || state == CONNECTOR_STATE_CONNECTOR_ERROR)
 						{
 							construct_query(query);
-							ret = sqlc_execute(&sd,query);
+							ret = mysqlc_execute(&sd,query);
 							if(!ret){
 								insert_time = time;
 								 LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Inserting...\n\r"));

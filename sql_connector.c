@@ -139,7 +139,6 @@ union _sha1_state {
 };
 /**
  * SHA1 Initialization State (constant) used on the hashing process.
- * 
 */
 const u8_t sha1InitState[] = {
   0x01,0x23,0x45,0x67, // H0
@@ -211,7 +210,8 @@ struct sql_connector{
 	/** @todo not used remove */
 	u8_t innerHash[HASH_LENGTH];
 
-	/** SHA1 seed buffer used to save the server provided seed on the handshake packet 
+	/** 
+	 * SHA1 seed buffer used to save the server provided seed on the handshake packet 
 	 * to be used on the hashing process.
 	*/
 	char seed[20];
@@ -319,7 +319,7 @@ u16_t mysqlc_read_packet(struct sql_connector* s){
 	}
 	return 1 ;
 }
-/*
+/**
  *  @brief Free memory allocated for column names
  *
  *  This method frees the memory allocated during the get_columns()
@@ -350,7 +350,7 @@ void mysqlc_free_columns_buffer(struct sql_connector* s) {
 }
 
 
-/*
+/**
  *  @brief Free memory allocated for row values
  *
  *  This method frees the memory allocated during the get_next_row()
@@ -374,7 +374,7 @@ void mysqlc_free_row_buffer(struct sql_connector* s) {
     s->row.values[f] = NULL;
   }
 }
-/*
+/**
  * @brief Read a row from the server received payload.
  *
  * This reads a single row (moving the received payload pointer to the next packet).If there are
@@ -714,6 +714,7 @@ void Encrypt_SHA1_write(struct sql_connector* s,uint8_t data) {
   ++s->byteCount;
   Encrypt_SHA1_addUncounted(s,data);
 }
+
 /**
  * @brief Write an array of bytes to sha1_buffer with a known length
  * 
@@ -733,6 +734,7 @@ void Encrypt_SHA1_write_arr(struct sql_connector* s,const uint8_t* data, u16_t l
 	  Encrypt_SHA1_write(s,data[i]);
   }
 }
+
 /**
  * @brief write a string to the sha1_buffer
  * 
@@ -776,6 +778,7 @@ void Encrypt_SHA1_pad(struct sql_connector* s) {
   Encrypt_SHA1_addUncounted(s,s->byteCount >> 5);
   Encrypt_SHA1_addUncounted(s,s->byteCount << 3);
 }
+
 /**
  * @brief Returns SHA1 hashed buffer called after hashing sha1_buffer
  * 
@@ -844,6 +847,7 @@ u16_t sqlc_create( sqlc_descriptor* d ){
 	sqlcd_array[i].sqlc_d = d;
 	return 0 ;
 }
+
 /** 
  * @brief The actual mysql connect function, called by sqlc_connect and
  * after setting up the sql_connector structure.
@@ -898,6 +902,7 @@ leave:
   /* no need to call the callback here since we return != ERR_OK */
   return err;
 }
+
 /**
  * @brief upon creating a mysqlc_descriptor using mysqlc_create, mysqlc_connect initiate a\n
  * connection with a server.
@@ -941,6 +946,7 @@ u16_t sqlc_connect(sqlc_descriptor* d ,const char* hostname ,u16_t port, const c
 	sqlc_ptr->es = CONNECTOR_ERROR_OK;
 	return 0 ;
 }
+
 /**
  * @brief disconnect the mysql connector from a server.
  * 
@@ -979,6 +985,7 @@ u16_t sqlc_disconnect(sqlc_descriptor*d)
 	}
 	return 1 ;
 }
+
 /**
  * @brief Deletes the mysql connector structure linked to the provided descriptor.\n
  * Cleans up after working with the connector , this is essential to avoid memory fault issues.
@@ -1004,6 +1011,7 @@ u16_t sqlc_delete(sqlc_descriptor*d)
 	sqlcd_array[i].sqlc_d = NULL;
 	return 0 ;
 }
+
 /**
  * @brief Provides the mysql connector linked to the provided descriptor state.\n
  *            CONNECTOR_STATE_IDLE (the connector is idle (neither try to connect or connected to a server).\n
@@ -1031,6 +1039,7 @@ u16_t sqlc_get_state(sqlc_descriptor*d,enum state* state)
 	*state = sqlcd_array[i].sqlc->connector_state;
 	return 0 ;
 }
+
 /**
  * @brief reads error state, usually called if the mysql connector
  * state is CONNECTOR_STATE_CONNECTOR_ERROR to check the error happenned.
@@ -1055,6 +1064,7 @@ u16_t sqlc_get_error_state(sqlc_descriptor*d,enum error_state* es)
 	*es = sqlcd_array[i].sqlc->es;
 	return 0 ;
 }
+
 /**
  * @brief Check the mysql connector linked to the provided descriptor linked if is connected to a server.
  * @param d: pointer to mysql connector descriptor linked to the connector needed to check it's connection.
@@ -1075,6 +1085,7 @@ u16_t sqlc_is_connected(sqlc_descriptor*d, char* connected)
 	*connected = sqlcd_array[i].sqlc->connected;
 	return 0 ;
 }
+
 /**
  * @brief Connection with the server should be already stablised,then calling this function sends the commands\n
  * provided in the query character array.
@@ -1122,7 +1133,18 @@ u16_t sqlc_execute(sqlc_descriptor*d,const char* query){
 	s->es = CONNECTOR_ERROR_OK;
 	return 0;
 }
-
+/**
+ * @brief Callback function, called by the LWIP TCP stack just after the 
+ * connection is established with the server.
+ * 
+ * @param arg pointer to the chosen argument passed to tcp_arg(), in our case is a
+ * pointer to the sql connector structure used in this session.
+ * @param pcb the pcb where the connection is established with.
+ * @param err the TCP error state.
+ * 
+ * @return err_t LWIP error Type in our case is always ERR_OK. 
+ * 
+*/
 err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err)
  {
      err_t ret_code = ERR_OK;
@@ -1134,6 +1156,16 @@ err_t sqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err)
 
 	 return ret_code;
 }
+/**
+ * @brief Callback function ,called by the LWIP TCP stack when an error 
+ * happens during a connection session.
+ * 
+ * @param arg pointer to the chosen argument passed to tcp_arg(), in our case is a
+ * pointer to the sql connector structure used in this session.
+ * 
+ * @param err LWIP TCP error accured.
+ * 
+*/
 void sqlc_err(void *arg, err_t err)
  {
 	 struct sql_connector *s = arg;
@@ -1148,10 +1180,18 @@ void sqlc_err(void *arg, err_t err)
 	 s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
 	 s->es = CONNECTOR_ERROR_TCP_ERROR;
 	 s->state = SQLC_CLOSED;
-	 //@ TODO handle other events , basically we check the connector state and the session state...
+	 //@ TODO handle other events, basically we check the connector state and the session state...
 	 sqlc_cleanup(s);
-
 }
+/**
+ * @brief Raw API TCP poll callback.
+ * 
+ * @param arg pointer to the chosen argument passed to tcp_arg(), in our case is a
+ * pointer to the sql connector structure used in this session.
+ * 
+ * @param pcb pointer to the TCP PCB linked to that connection
+ * 
+*/
 err_t sqlc_poll(void *arg, struct tcp_pcb *pcb)
 {
     err_t ret_code = ERR_OK,err;
@@ -1179,17 +1219,24 @@ err_t sqlc_poll(void *arg, struct tcp_pcb *pcb)
 			}
 
 			if (s->timer == 0) {
-			      s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
+			    s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
 				  s->es = CONNECTOR_ERROR_SENDING;
 			}
 		}
-		// TODO handle other events..
+		/// @TODO handle other events..
 	}
 	else{
 		LWIP_DEBUGF(SQLC_DEBUG, ("sqlc_poll: something wrong\n\r"));
 	}
  return ret_code;
 }
+/**
+ * @brief on closing a connection this function frees any allocated 
+ * memory related to that connection session (payload buffer,mysql table buffers,etc..)
+ * 
+ * @param s pointer to the mysql connector(client) structure holding the allocated buffers to free.
+ * 
+*/
 static void
 sqlc_cleanup(struct sql_connector *s)
 {
@@ -1216,7 +1263,17 @@ sqlc_cleanup(struct sql_connector *s)
 	}
 }
 
-/** Try to close a pcb and free the arg if successful */
+/** 
+ * @brief Try to close a pcb and free the arg if successful 
+ * 
+ * @param s pointer to the mysql connector(client) structure holding the PCB to close it's 
+ * connection and buffers to deaallocate.
+ * 
+ * @return integer\n
+ *                0: no errors, closed successfully.
+ *                1: close failed.
+ * 
+*/
 static u16_t
 sqlc_close(struct sql_connector *s)
 {
@@ -1264,6 +1321,20 @@ void parse_handshake_packet(struct sql_connector* s,struct pbuf *p)
 		s->seed[i + 8] = ((char*)p->payload)[seed_index + i ];
 	}
 }
+/**
+ * @brief Write the mysqlconnector Data payload to the TCP send buffer to be sent to 
+ * the server.
+ * 
+ * If the payload is larger than the TCP send buffer, then it sends part of the buffer and the remaining 
+ * is sent on the sql_sent callback.
+ * 
+ * @param pcb pointer to the TCP's PCB writing the data on
+ * @param s pointer to the mysql connector structure holding the payload
+ *  
+ * @return err_t LWIP error type returned from the tcp_write() function. returns 
+ * ERR_OK if the data is written successfully.
+ *
+*/
 err_t sqlc_send(struct tcp_pcb *pcb,struct sql_connector* s){
 	u16_t len ;
 	err_t ret_code = ERR_OK,err = ERR_OK;
@@ -1332,17 +1403,17 @@ char scramble_password(struct sql_connector* s,const char* password , char* pwd_
 
 	  return 1;
 }
-/*
-  store_int - Store an integer value into a byte array of size bytes.
-
-  This writes an integer into the buffer at the current position of the
-  buffer. It will transform an integer of size to a length coded binary
-  form where 1-3 bytes are used to store the value (set by size).
-
-  buff[in]        pointer to location in internal buffer where the
-                  integer will be stored
-  value[in]       integer value to be stored
-  size[in]        number of bytes to use to store the integer
+/**
+ *  @brief Store an integer value into a byte array of size bytes.
+ *
+ *  This writes an integer into the buffer at the current position of the
+ *  buffer. It will transform an integer of size to a length coded binary
+ *  form where 1-3 bytes are used to store the value (set by size).
+ *
+ *  @param buff  pointer to location in internal buffer where the integer will be stored.
+ *  @param value integer value to be stored.
+ *  @param size  number of bytes to use to store the integer.
+ * 
 */
 void store_int(char *buff, u32_t value, u16_t size) {
   memset(buff, 0, size);
@@ -1715,6 +1786,14 @@ sqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 /**
  * @brief Data has been sent and acknowledged by the remote host.
  * This means that more data can be sent.
+ * 
+ * @param arg pointer to the chosen argument passed to tcp_arg(), in our case is a
+ * pointer to the sql connector structure used in this session.
+ * 
+ * @param pcb pointer to the TCP PCB used for that connection
+ * @param len length of data acknowleged by the server. 
+ * 
+ * @return err_t LWIP error Type, on our case always returns ERR_OK.
  * 
  */
 err_t sqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)

@@ -205,10 +205,6 @@ struct sql_connector{
 	union _sha1_state sha1_state;
 	/** SHA1 Counter for number of bytes to be hashed*/
 	u32_t byteCount;
-	/** @todo not used remove*/
-	u8_t keyBuffer[BLOCK_LENGTH];
-	/** @todo not used remove */
-	u8_t innerHash[HASH_LENGTH];
 
 	/** 
 	 * SHA1 seed buffer used to save the server provided seed on the handshake packet 
@@ -809,11 +805,6 @@ uint8_t* Encrypt_SHA1_result(struct sql_connector* s) {
   // Return pointer to hash (20 characters)
   return s->sha1_state.b;
 }
-
-#define HMAC_IPAD 0x36
-#define HMAC_OPAD 0x5c
-
-
 /**
  * @brief Create a mysql connector structure and 
  * link it to the provided descriptor.

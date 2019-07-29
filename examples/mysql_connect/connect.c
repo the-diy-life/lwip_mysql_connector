@@ -16,30 +16,30 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
   Created on: Aug 24, 2017
        Author: Amr Elsayed
-	   
-	   
-	   
+       
+       
+       
 example : 
-		#include "lwip.h"
-		#include "connect.h"
-		
-		int main(void)
-		{
-				MX_LWIP_Init();
-			
-				while(1){
-					
-					hal_time = HAL_GetTick();
-					MX_LWIP_Process(hal_time);
-					connect_periodic_handler();			
-					
-					
-				}
-			
-			
-		}
-		
-		
+        #include "lwip.h"
+        #include "connect.h"
+        
+        int main(void)
+        {
+                MX_LWIP_Init();
+            
+                while(1){
+                    
+                    hal_time = HAL_GetTick();
+                    MX_LWIP_Process(hal_time);
+                    connect_periodic_handler();			
+                    
+                    
+                }
+            
+            
+        }
+        
+        
  */
 
 #include "mysql_connector.h"
@@ -51,8 +51,8 @@ mysqlc_descriptor sd;
 
 // two states (init , loop)
 enum connect_states{
-	CONNECT_INIT,
-	CONNECT_LOOP
+    CONNECT_INIT,
+    CONNECT_LOOP
 };
 
 const char hostname[] = "192.168.1.69";
@@ -62,33 +62,33 @@ const char password[] = "password";
 enum connect_states cs = CONNECT_INIT;
 void connect_periodic_handler(void)
 {
-	u16_t ret = 0 ;
-	char connected = 0 ;
-	switch(cs){
+    u16_t ret = 0 ;
+    char connected = 0 ;
+    switch(cs){
 
-		case CONNECT_INIT:
-			ret = mysqlc_create(&sd);
-			if(!ret){
-				ret = mysqlc_connect(&sd,hostname,3306,username,password);
-				if(!ret)
-					cs = CONNECT_LOOP;
-				else{
-					mysqlc_delete(&sd);
-				}
-			}
+        case CONNECT_INIT:
+            ret = mysqlc_create(&sd);
+            if(!ret){
+                ret = mysqlc_connect(&sd,hostname,3306,username,password);
+                if(!ret)
+                    cs = CONNECT_LOOP;
+                else{
+                    mysqlc_delete(&sd);
+                }
+            }
 
-			break;
+            break;
 
-		case CONNECT_LOOP:
-			mysqlc_is_connected(&sd,&connected);
-			if(connected){
-				// success , celebrate...
-				 LWIP_DEBUGF(LWIP_DBG_ON, ("connect_periodic_handler():Connected\n\r"));
+        case CONNECT_LOOP:
+            mysqlc_is_connected(&sd,&connected);
+            if(connected){
+                // success , celebrate...
+                 LWIP_DEBUGF(LWIP_DBG_ON, ("connect_periodic_handler():Connected\n\r"));
 
-			}
-			break;
+            }
+            break;
 
-	}
+    }
 
 
 

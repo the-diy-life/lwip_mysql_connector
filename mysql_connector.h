@@ -46,18 +46,18 @@
 
 enum error_state {
   /** No error. */
-	CONNECTOR_ERROR_OK,
+  CONNECTOR_ERROR_OK,
   /** Attempt to send packets\n
  * on a none connected mySQL Connector.*/
-	CONNECTOR_ERROR_NOT_CONNECTED,
+  CONNECTOR_ERROR_NOT_CONNECTED,
   /** the Connection with the server is closed non gracefully. */
-	CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION,
+  CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION,
   /** internal LWIP Stack error. */
-	CONNECTOR_ERROR_TCP_ERROR,
+  CONNECTOR_ERROR_TCP_ERROR,
   /** cannot connect to the server.*/
-	CONNECTOR_ERROR_CANNOT_CONNECT,
+  CONNECTOR_ERROR_CANNOT_CONNECT,
   /** error while trying to send data to the server ( connection were successful ).*/
-	CONNECTOR_ERROR_SENDING,
+  CONNECTOR_ERROR_SENDING,
 };
 
 /**
@@ -69,15 +69,15 @@ enum error_state {
  */
 enum state {
   /** MySQL Connector is IDLE, is not trying to connect or send data to a server.*/
-	CONNECTOR_STATE_IDLE,
+  CONNECTOR_STATE_IDLE,
   /** MySQL Connector is trying to connect to a server.*/
-	CONNECTOR_STATE_CONNECTING,
+  CONNECTOR_STATE_CONNECTING,
   /** MySQL Connector is trying to send data to a server.*/
-	CONNECTOR_STATE_SENDING,
+  CONNECTOR_STATE_SENDING,
   /** MySQL Connector sent data to the server.*/
-	CONNECTOR_STATE_SENDING_DONE,
+  CONNECTOR_STATE_SENDING_DONE,
   /** MySQL connector has an error while a session attempt, check the connector error state to know the type of error.*/
-	CONNECTOR_STATE_CONNECTOR_ERROR
+  CONNECTOR_STATE_CONNECTOR_ERROR
 };
 /** 
  * Maximum number of mySQL fields(columns).\n

@@ -71,7 +71,7 @@ void connect_periodic_handler(void)
         ret = mysqlc_connect(&sd,hostname,3306,username,password);
         if(!ret)
           cs = CONNECT_LOOP;
-        else{
+        else {
           mysqlc_delete(&sd);
         }
       }

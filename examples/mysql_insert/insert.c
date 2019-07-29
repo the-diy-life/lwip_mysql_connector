@@ -81,15 +81,14 @@ void insert_periodic_handler(u32_t time)
   switch (cs) {
     case INIT:
       ret = mysqlc_create(&sd);
-      if (!ret) {
+      if (!ret)
         cs = CONNECT;
-      }
       break;
     case CONNECT:
       ret = mysqlc_connect(&sd,hostname,3306,username,password);
       if (!ret)
         cs = CONNECTING;
-      else{
+      else {
         mysqlc_delete(&sd);
         cs = INIT;
       }
@@ -98,12 +97,12 @@ void insert_periodic_handler(u32_t time)
       ret = mysqlc_is_connected(&sd,&connected);
       if (ret)
         cs = INIT;/* No connector then recreate it*/
-      else if (!connected){
+      else if (!connected) {
         enum state state;
         ret = mysqlc_get_state(&sd,&state);
         if(ret)
           cs = INIT;/* No connector then recreate it*/
-        else if(state != CONNECTOR_STATE_CONNECTING){
+        else if (state != CONNECTOR_STATE_CONNECTING) {
           LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Not Connected\n"));
           cs = CONNECT;
         }
@@ -115,16 +114,15 @@ void insert_periodic_handler(u32_t time)
       ret = mysqlc_is_connected(&sd,&connected);
       if (ret)
         cs = INIT;
-      else if (!connected){
+      else if (!connected) {
         LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Not Connected\n"));
         cs =  CONNECT;
-      }else{
+      } else {
         enum state state;
         if (time - insert_time >  INSERT_PERIOD) {
           ret = mysqlc_get_state(&sd,&state);
           if (!ret) {
-            if (state == CONNECTOR_STATE_IDLE || state == CONNECTOR_STATE_CONNECTOR_ERROR)
-            {
+            if (state == CONNECTOR_STATE_IDLE || state == CONNECTOR_STATE_CONNECTOR_ERROR) {
               construct_query(query);
               ret = mysqlc_execute(&sd,query);
               if (!ret) {
@@ -132,7 +130,7 @@ void insert_periodic_handler(u32_t time)
                 LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Inserting...\n"));
               }
             }
-          }else{
+          } else {
             cs = INIT;
           }
         }

@@ -92,7 +92,7 @@ void select_periodic_handler(uint32_t time)
       ret = mysqlc_connect(&sd,hostname,3306,username,password);
       if (!ret)
         cs = CONNECTING;
-      else{
+      else {
         mysqlc_delete(&sd);
         cs = INIT;
       }
@@ -110,7 +110,7 @@ void select_periodic_handler(uint32_t time)
           LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Not Connected\n"));
           cs = CONNECT;
         }
-      }else{
+      } else {
         cs = CONNECTED;
       }
       break;
@@ -122,7 +122,7 @@ void select_periodic_handler(uint32_t time)
         LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Not Connected\n"));
         cs =  CONNECT;
         ss = EXECUTE;
-      }else{
+      } else {
         switch (ss) {
           case EXECUTE:
             {
@@ -130,15 +130,14 @@ void select_periodic_handler(uint32_t time)
               if (time - select_time >  SELECT_PERIOD) {
                 ret = mysqlc_get_state(&sd,&state);
                 if (!ret) {
-                  if (state == CONNECTOR_STATE_IDLE || state == CONNECTOR_STATE_CONNECTOR_ERROR)
-                  {
+                  if (state == CONNECTOR_STATE_IDLE || state == CONNECTOR_STATE_CONNECTOR_ERROR) {
                     ret = mysqlc_execute(&sd,read_query);
                     if (!ret) {
                       ss = READ;
                       LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Reading...\n"));
                     }
                   }
-                }else{
+                } else {
                   cs = INIT;
                   ss= EXECUTE;
                 }
@@ -149,7 +148,7 @@ void select_periodic_handler(uint32_t time)
             {
               enum state state;
               ret = mysqlc_get_state(&sd,&state);
-              if  (state == CONNECTOR_STATE_IDLE ){
+              if (state == CONNECTOR_STATE_IDLE ) {
                 column_names* columns = NULL;
                 columns = mysqlc_get_columns(&sd);
                 if (columns) {
@@ -157,7 +156,7 @@ void select_periodic_handler(uint32_t time)
                   if (row != NULL) {
                     long value;
                     LWIP_DEBUGF(LWIP_DBG_ON, ("number of fields is  %d\n",columns->num_fields));
-                    for ( int i = 0 ; i < columns->num_fields ; i++){
+                    for ( int i = 0 ; i < columns->num_fields ; i++) {
                       LWIP_DEBUGF(LWIP_DBG_ON, ("%s, ",row->values[i]));
                       //d[i-1] = atol(row->values[i]);
                     }
@@ -165,7 +164,7 @@ void select_periodic_handler(uint32_t time)
                   ss = EXECUTE;
                 }
                 //ss = EXECUTE;
-              }else if (state == CONNECTOR_STATE_CONNECTOR_ERROR ) {
+              } else if (state == CONNECTOR_STATE_CONNECTOR_ERROR ) {
                 ss = EXECUTE;
               }
             }

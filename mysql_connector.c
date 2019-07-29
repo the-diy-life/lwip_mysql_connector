@@ -390,11 +390,11 @@ void mysqlc_free_row_buffer(struct mysql_connector* s) {
 u16_t mysqlc_get_row(struct mysql_connector* s) {
   // Read row packets
   u16_t i = 0;
-//	while (i < s->num_cols){
+// while (i < s->num_cols){
     if(mysqlc_read_packet(s))
       return MYSQL_EOF_PACKET;
-//	  i++;
-//	}
+//   i++;
+// }
 //  if (conn->buffer[4] != MYSQL_EOF_PACKET)
   if (((char*)(s->p->payload))[s->p_index + 4] != MYSQL_EOF_PACKET)
     return 0;
@@ -812,7 +812,7 @@ uint8_t* Encrypt_SHA1_result(struct mysql_connector* s) {
  * @param d: pointer to a mysql connector descriptor structure provided by the application
  * 
  * @return 0: No errors and the connector structure is created successfully.\n
- * 				 1: error creating the connector structure (either exceeded MAX_MYSQL_CONNECTORS,\n
+ *         1: error creating the connector structure (either exceeded MAX_MYSQL_CONNECTORS,\n
  * the descriptor is already linked to another connector or memory allocation for the connector structure failed).
  * 
  */
@@ -1353,7 +1353,7 @@ err_t mysqlc_send(struct tcp_pcb *pcb,struct mysql_connector* s){
  * @param pwd_hash pointer to a buffer to save the hashed password in.
  * 
  * return byte.\n 
- * 					1: Password hashed successfully.\n
+ *          1: Password hashed successfully.\n
  *          0: Error, the provided password is empty or is not a NULL terminated string.
  * 
 */
@@ -1439,8 +1439,8 @@ void store_int(char *buff, u32_t value, u16_t size) {
  * @param password pointer to authentication password string to be hashed and added to the packet.
  * 
  * @return err_t LWIP Error code :\n
- * 							ERR_MEM memory allocation error while creating the sending buffer.\n
- *              Another LWIP error while sending the packet through the LWIP Stacl "mysqlc_send()"
+ *         ERR_MEM memory allocation error while creating the sending buffer.\n
+ *         Another LWIP error while sending the packet through the LWIP Stacl "mysqlc_send()"
  * 
 */
 err_t send_authentication_packet( struct mysql_connector* s, struct tcp_pcb *pcb,const char *user,const char *password)
@@ -1745,8 +1745,8 @@ mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
               s->es = CONNECTOR_ERROR_OK;
               }
              tcp_recved(pcb, p->tot_len);
-//					     pbuf_free(p);
-//					     s->p = NULL;
+//           pbuf_free(p);
+//           s->p = NULL;
          }
        }
 

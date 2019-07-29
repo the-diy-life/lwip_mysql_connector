@@ -31,7 +31,7 @@ example :
                     
                     hal_time = HAL_GetTick();
                     MX_LWIP_Process(hal_time);
-                    connect_periodic_handler();			
+                    connect_periodic_handler();
                     
                     
                 }

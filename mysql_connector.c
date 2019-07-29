@@ -299,7 +299,7 @@ u16_t mysqlc_read_packet(struct mysql_connector* s){
     if (length + 4 < s->p->tot_len) {
       s->p_index+= length + 4;
       struct pbuf* q = pbuf_skip(s->p,s->p_index,&s->p_index);
-      if (s->p!=q) {
+      if (s->p != q) {
         struct pbuf* qp1 = s->p,*qp2 = NULL;
         while (qp1->next != q) {
           qp2 = qp1;
@@ -431,9 +431,8 @@ u16_t mysqlc_get_row_values(struct mysql_connector* s) {
   res = mysqlc_get_row(s);
   if (res != MYSQL_EOF_PACKET) {
     offset = 4;
-    for (u16_t f = 0; f < s->num_cols; f++) {
+    for (u16_t f = 0; f < s->num_cols; f++)
       s->row.values[f] = mysqlc_read_string(s,&offset);
-    }
   }
   return res;
 }
@@ -511,9 +510,8 @@ char mysqlc_get_fields(struct mysql_connector* s)
   u16_t num_fields = 0;
   u16_t res = 0;
 
-  if (s->p->payload== NULL) {
+  if (s->p->payload == NULL)
     return 0;
-  }
   if (mysqlc_read_packet(s) == 0) { // added
     num_fields = ((char*)(s->p->payload))[s->p_index + 4];//conn->buffer[4]; // From result header packet
     s->columns.num_fields = num_fields;
@@ -635,31 +633,31 @@ void Encrypt_SHA1_hashBlock(struct mysql_connector* s) {
   uint8_t i;
   u32_t a,b,c,d,e,t;
 
-  a=s->sha1_state.w[0];
-  b=s->sha1_state.w[1];
-  c=s->sha1_state.w[2];
-  d=s->sha1_state.w[3];
-  e=s->sha1_state.w[4];
-  for (i=0; i<80; i++) {
-    if (i>=16) {
+  a = s->sha1_state.w[0];
+  b = s->sha1_state.w[1];
+  c = s->sha1_state.w[2];
+  d = s->sha1_state.w[3];
+  e = s->sha1_state.w[4];
+  for (i = 0; i < 80; i++) {
+    if (i >= 6) {
       t = s->sha1_buffer.w[(i+13)&15] ^ s->sha1_buffer.w[(i+8)&15] ^ s->sha1_buffer.w[(i+2)&15] ^ s->sha1_buffer.w[i&15];
       s->sha1_buffer.w[i&15] = Encrypt_SHA1_rol32(t,1);
     }
-    if (i<20) {
+    if (i < 20) {
       t = (d ^ (b & (c ^ d))) + MYSQL_SHA1_K0;
-    } else if (i<40) {
+    } else if (i < 40) {
       t = (b ^ c ^ d) + MYSQL_SHA1_K20;
-    } else if (i<60) {
+    } else if (i < 60) {
       t = ((b & c) | (d & (b | c))) + MYSQL_SHA1_K40;
     } else {
       t = (b ^ c ^ d) + MYSQL_SHA1_K60;
     }
-    t+=Encrypt_SHA1_rol32(a,5) + e + s->sha1_buffer.w[i&15];
-    e=d;
-    d=c;
-    c=Encrypt_SHA1_rol32(b,30);
-    b=a;
-    a=t;
+    t += Encrypt_SHA1_rol32(a,5) + e + s->sha1_buffer.w[i&15];
+    e = d;
+    d = c;
+    c = Encrypt_SHA1_rol32(b,30);
+    b = a;
+    a = t;
   }
   s->sha1_state.w[0] += a;
   s->sha1_state.w[1] += b;
@@ -723,9 +721,8 @@ void Encrypt_SHA1_write(struct mysql_connector* s,uint8_t data) {
  * 
 */
 void Encrypt_SHA1_write_arr(struct mysql_connector* s,const uint8_t* data, u16_t length) {
-  for (u16_t i=0; i<length; i++) {
+  for (u16_t i = 0; i < length; i++)
     Encrypt_SHA1_write(s,data[i]);
-  }
 }
 
 /**
@@ -759,7 +756,8 @@ void Encrypt_SHA1_pad(struct mysql_connector* s) {
 
   // Pad with 0x80 followed by 0x00 until the end of the block
   Encrypt_SHA1_addUncounted(s,0x80);
-  while (s->bufferOffset != 56) Encrypt_SHA1_addUncounted(s,0x00);
+  while (s->bufferOffset != 56) 
+    Encrypt_SHA1_addUncounted(s,0x00);
 
   // Append length in the last 8 bytes
   Encrypt_SHA1_addUncounted(s,0); // We're only using 32 bit lengths
@@ -789,14 +787,14 @@ uint8_t* Encrypt_SHA1_result(struct mysql_connector* s) {
   Encrypt_SHA1_pad(s);
 
   // Swap byte order back
-  for (u16_t i=0; i<5; i++) {
+  for (u16_t i = 0; i < 5; i++) {
     u32_t a,b;
-    a=s->sha1_state.w[i];
-    b=a<<24;
-    b|=(a<<8) & 0x00ff0000;
-    b|=(a>>8) & 0x0000ff00;
-    b|=a>>24;
-    s->sha1_state.w[i]=b;
+    a = s->sha1_state.w[i];
+    b = a<<24;
+    b |= (a<<8) & 0x00ff0000;
+    b |= (a>>8) & 0x0000ff00;
+    b |= a>>24;
+    s->sha1_state.w[i] = b;
   }
   // Return pointer to hash (20 characters)
   return s->sha1_state.b;
@@ -814,11 +812,11 @@ uint8_t* Encrypt_SHA1_result(struct mysql_connector* s) {
  */
 u16_t mysqlc_create( mysqlc_descriptor* d ){
   u16_t i = 0 ;
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
+  for (i = 0 ; i < MAX_MYSQL_CONNECTORS ; i++) {
     if(mysqlcd_array[i].mysqlc_d == d)
       return 1 ;
   }
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
+  for (i = 0 ; i < MAX_MYSQL_CONNECTORS ; i++) {
     if(mysqlcd_array[i].mysqlc_d == NULL && mysqlcd_array[i].mysqlc == NULL)
       break;
   }
@@ -978,7 +976,7 @@ u16_t mysqlc_disconnect(mysqlc_descriptor*d)
 u16_t mysqlc_delete(mysqlc_descriptor*d)
 {
   u16_t i = 0 ;
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
+  for (i = 0 ; i < MAX_MYSQL_CONNECTORS ;i++) {
     if(mysqlcd_array[i].mysqlc_d == d)
       break;
   }
@@ -1010,7 +1008,7 @@ u16_t mysqlc_delete(mysqlc_descriptor*d)
 u16_t mysqlc_get_state(mysqlc_descriptor*d,enum state* state)
 {
   u16_t i ;
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
+  for (i = 0 ; i < MAX_MYSQL_CONNECTORS ; i++) {
     if (mysqlcd_array[i].mysqlc_d == d)
       break;
   }
@@ -1035,7 +1033,7 @@ u16_t mysqlc_get_state(mysqlc_descriptor*d,enum state* state)
 u16_t mysqlc_get_error_state(mysqlc_descriptor*d,enum error_state* es)
 {
   u16_t i ;
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
+  for (i = 0 ; i < MAX_MYSQL_CONNECTORS ;i++) {
     if (mysqlcd_array[i].mysqlc_d == d)
       break;
   }
@@ -1056,7 +1054,7 @@ u16_t mysqlc_get_error_state(mysqlc_descriptor*d,enum error_state* es)
 u16_t mysqlc_is_connected(mysqlc_descriptor*d, char* connected)
 {
   u16_t i ;
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
+  for (i = 0 ; i < MAX_MYSQL_CONNECTORS ;i++) {
     if (mysqlcd_array[i].mysqlc_d == d)
       break;
   }
@@ -1079,7 +1077,7 @@ u16_t mysqlc_is_connected(mysqlc_descriptor*d, char* connected)
  */
 u16_t mysqlc_execute(mysqlc_descriptor*d,const char* query){
   u16_t i ;
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
+  for (i = 0 ; i < MAX_MYSQL_CONNECTORS ; i++) {
     if (mysqlcd_array[i].mysqlc_d == d)
       break;
   }
@@ -1152,7 +1150,7 @@ void mysqlc_err(void *arg, err_t err)
     s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
     s->es = CONNECTOR_ERROR_TCP_ERROR;
     s->state = MYSQLC_CLOSED;
-  }else if (s->connected) {
+  } else if (s->connected) {
     s->connected = 0 ;
   }
   s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
@@ -1311,7 +1309,7 @@ void parse_handshake_packet(struct mysql_connector* s,struct pbuf *p)
 err_t mysqlc_send(struct tcp_pcb *pcb,struct mysql_connector* s){
   u16_t len ;
   err_t ret_code = ERR_OK,err = ERR_OK;
-  len=s->payload_len - s->payload_sent;
+  len = s->payload_len - s->payload_sent;
   if (len > tcp_sndbuf(pcb)) {
     LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_send: request length is Larger than max amount%d\n",err));
     len = tcp_sndbuf(pcb);
@@ -1600,7 +1598,7 @@ void parse_error_packet(char* buffer,u16_t packet_len) {
   LWIP_DEBUGF(MYSQLC_DEBUG,("Error: "));
   LWIP_DEBUGF(MYSQLC_DEBUG,("%d",read_int(buffer,5, 2)));
   LWIP_DEBUGF(MYSQLC_DEBUG,(" = "));
-  for (u16_t i = 0; i < packet_len-9; i++)
+  for (u16_t i = 0; i < packet_len-9 ; i++)
     LWIP_DEBUGF(MYSQLC_DEBUG,("%c",(char)buffer[i+13]));
   LWIP_DEBUGF(MYSQLC_DEBUG,("."));
 }
@@ -1649,8 +1647,8 @@ mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
       */
       if (p->tot_len > 4) {
         u32_t packet_length = ((char*)p->payload)[0];
-        packet_length += ((char*)p->payload)[1]<<8;
-        packet_length += ((char*)p->payload)[2]<<16;
+        packet_length += ((char*)p->payload)[1] << 8;
+        packet_length += ((char*)p->payload)[2] << 16;
         if (p->tot_len >= packet_length + 4) {
           parse_handshake_packet(s,p);
           tcp_recved(pcb, p->tot_len);
@@ -1768,7 +1766,7 @@ mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
  */
 err_t mysqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
 {
-  struct mysql_connector * s = arg;
+  struct mysql_connector *s = arg;
   LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_sent:Done Sending to client : %d\n",len));
   /* the connector timer for timeout is reset so that the connection will not be closed, not waiting any more*/
   if (s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == MYSQLC_RECV) {
@@ -1776,7 +1774,7 @@ err_t mysqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
   } else if (s->connector_state == CONNECTOR_STATE_SENDING) {
     s->timer = MYSQLC_TIMEOUT;
   }  
-  s->payload_sent +=len;
+  s->payload_sent += len;
   if (s->payload && s->payload_len - s->payload_sent) {
     /* if the sending buffer has more data, try to continue sending data */
     mysqlc_send(pcb,s);

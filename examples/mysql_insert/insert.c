@@ -106,7 +106,7 @@ void insert_periodic_handler(u32_t time)
           LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Not Connected\n"));
           cs = CONNECT;
         }
-      }else{
+      } else{
         cs = CONNECTED;
       }
       break;

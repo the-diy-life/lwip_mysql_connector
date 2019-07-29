@@ -81,7 +81,7 @@ void insert_periodic_handler(u32_t time)
   switch (cs) {
     case INIT:
       ret = mysqlc_create(&sd);
-      if(!ret){
+      if (!ret) {
         cs = CONNECT;
       }
       break;
@@ -120,14 +120,14 @@ void insert_periodic_handler(u32_t time)
         cs =  CONNECT;
       }else{
         enum state state;
-        if(time - insert_time >  INSERT_PERIOD){
+        if (time - insert_time >  INSERT_PERIOD) {
           ret = mysqlc_get_state(&sd,&state);
-          if(!ret){
-            if(state == CONNECTOR_STATE_IDLE || state == CONNECTOR_STATE_CONNECTOR_ERROR)
+          if (!ret) {
+            if (state == CONNECTOR_STATE_IDLE || state == CONNECTOR_STATE_CONNECTOR_ERROR)
             {
               construct_query(query);
               ret = mysqlc_execute(&sd,query);
-              if(!ret){
+              if (!ret) {
                 insert_time = time;
                 LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Inserting...\n"));
               }

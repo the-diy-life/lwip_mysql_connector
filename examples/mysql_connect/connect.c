@@ -78,7 +78,7 @@ void connect_periodic_handler(void)
       break;
     case CONNECT_LOOP:
       mysqlc_is_connected(&sd,&connected);
-      if(connected){
+      if (connected) {
         // success , celebrate...
         LWIP_DEBUGF(LWIP_DBG_ON, ("connect_periodic_handler():Connected\n"));
       }

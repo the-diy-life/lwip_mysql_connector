@@ -81,16 +81,16 @@ void select_periodic_handler(uint32_t time)
 {
   u16_t ret = 0 ;
   char connected = 0 ;
-  switch(cs){
+  switch (cs) {
     case INIT:
       ret = mysqlc_create(&sd);
-      if(!ret){
+      if(!ret) {
         cs = CONNECT;
       }
       break;
     case CONNECT:
       ret = mysqlc_connect(&sd,hostname,3306,username,password);
-      if(!ret)
+      if (!ret)
         cs = CONNECTING;
       else{
         mysqlc_delete(&sd);
@@ -99,14 +99,14 @@ void select_periodic_handler(uint32_t time)
       break;
     case CONNECTING:
       ret = mysqlc_is_connected(&sd,&connected);
-      if(ret)
+      if (ret)
         cs = INIT;/* No connector then recreate it*/
-      else if(!connected){
+      else if (!connected) {
         enum state state;
         ret = mysqlc_get_state(&sd,&state);
-        if(ret)
+        if (ret)
           cs = INIT;/* No connector then recreate it*/
-        else if(state != CONNECTOR_STATE_CONNECTING){
+        else if (state != CONNECTOR_STATE_CONNECTING) {
           LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Not Connected\n"));
           cs = CONNECT;
         }
@@ -116,24 +116,24 @@ void select_periodic_handler(uint32_t time)
       break;
     case CONNECTED:
       ret = mysqlc_is_connected(&sd,&connected);
-      if(ret)
+      if (ret)
         cs = INIT;
-      else if(!connected){
+      else if (!connected) {
         LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Not Connected\n"));
         cs =  CONNECT;
         ss = EXECUTE;
       }else{
-        switch(ss){
+        switch (ss) {
           case EXECUTE:
             {
               enum state state;
-              if(time - select_time >  SELECT_PERIOD){
+              if (time - select_time >  SELECT_PERIOD) {
                 ret = mysqlc_get_state(&sd,&state);
-                if(!ret){
-                  if(state == CONNECTOR_STATE_IDLE || state == CONNECTOR_STATE_CONNECTOR_ERROR)
+                if (!ret) {
+                  if (state == CONNECTOR_STATE_IDLE || state == CONNECTOR_STATE_CONNECTOR_ERROR)
                   {
                     ret = mysqlc_execute(&sd,read_query);
-                    if(!ret){
+                    if (!ret) {
                       ss = READ;
                       LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Reading...\n"));
                     }
@@ -149,10 +149,10 @@ void select_periodic_handler(uint32_t time)
             {
               enum state state;
               ret = mysqlc_get_state(&sd,&state);
-              if(state == CONNECTOR_STATE_IDLE ){
+              if  (state == CONNECTOR_STATE_IDLE ){
                 column_names* columns = NULL;
                 columns = mysqlc_get_columns(&sd);
-                if(columns){
+                if (columns) {
                   row_values* row = mysqlc_get_next_row(&sd);
                   if (row != NULL) {
                     long value;
@@ -165,7 +165,7 @@ void select_periodic_handler(uint32_t time)
                   ss = EXECUTE;
                 }
                 //ss = EXECUTE;
-              }else if(state == CONNECTOR_STATE_CONNECTOR_ERROR ){
+              }else if (state == CONNECTOR_STATE_CONNECTOR_ERROR ) {
                 ss = EXECUTE;
               }
             }

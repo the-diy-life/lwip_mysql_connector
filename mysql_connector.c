@@ -291,15 +291,15 @@ char * mysqlc_read_string(struct mysql_connector* s,u16_t *offset) {
  * 
  */
 u16_t mysqlc_read_packet(struct mysql_connector* s){
-  if(s->p->payload){
+  if (s->p->payload) {
     //u16_t length  = read_int(s->p->payload,s->p_index, 3);
      u16_t length = ((char*)s->p->payload)[s->p_index];
      length += ((char*)s->p->payload)[s->p_index+1]<<8;
      length += ((char*)s->p->payload)[s->p_index+2]<<16;
-    if(length + 4 < s->p->tot_len){
+    if (length + 4 < s->p->tot_len) {
       s->p_index+= length + 4;
       struct pbuf* q = pbuf_skip(s->p,s->p_index,&s->p_index);
-      if(s->p!=q){
+      if (s->p!=q) {
         struct pbuf* qp1 = s->p,*qp2 = NULL;
         while(qp1->next != q){
           qp2 = qp1;
@@ -391,7 +391,7 @@ u16_t mysqlc_get_row(struct mysql_connector* s) {
   // Read row packets
   u16_t i = 0;
 // while (i < s->num_cols){
-    if(mysqlc_read_packet(s))
+    if (mysqlc_read_packet(s))
       return MYSQL_EOF_PACKET;
 //   i++;
 // }
@@ -474,7 +474,7 @@ u16_t mysqlc_get_field(struct mysql_connector* s,field_struct *fs) {
   u16_t offset;
 
   // Read field packets until EOF
-  if(mysqlc_read_packet(s) == 0){
+  if (mysqlc_read_packet(s) == 0) {
     if (((char*)(s->p->payload))[s->p_index + 4] != MYSQL_EOF_PACKET) {
     // calculate location of db
     len_bytes = get_lcb_len(&((char*)(s->p->payload))[s->p_index],4);
@@ -514,18 +514,18 @@ char mysqlc_get_fields(struct mysql_connector* s)
   if (s->p->payload== NULL) {
     return 0;
   }
-  if(mysqlc_read_packet(s) == 0){ // added
+  if (mysqlc_read_packet(s) == 0) { // added
     num_fields = ((char*)(s->p->payload))[s->p_index + 4];//conn->buffer[4]; // From result header packet
     s->columns.num_fields = num_fields;
     s->num_cols = num_fields; // Save this for later use
     for (u16_t f = 0; f < num_fields; f++) {
-    field_struct *field = (field_struct *)mem_malloc(sizeof(field_struct));
-    res = mysqlc_get_field(s,field);
-    if (res == MYSQL_EOF_PACKET) {
-      //conn->show_error(BAD_MOJO, true);
-      return 0;
-    }
-    s->columns.fields[f] = field;
+      field_struct *field = (field_struct *)mem_malloc(sizeof(field_struct));
+      res = mysqlc_get_field(s,field);
+      if (res == MYSQL_EOF_PACKET) {
+        //conn->show_error(BAD_MOJO, true);
+        return 0;
+      }
+      s->columns.fields[f] = field;
     }
     mysqlc_read_packet(s); // EOF packet
     return 1 ;
@@ -547,10 +547,10 @@ column_names* mysqlc_get_columns(mysqlc_descriptor* d) {
   u16_t i = 0 ;
   for (i = 0 ; i < MAX_MYSQL_CONNECTORS; i++)
   {
-    if(mysqlcd_array[i].mysqlc_d == d && mysqlcd_array[i].mysqlc != NULL)
+    if (mysqlcd_array[i].mysqlc_d == d && mysqlcd_array[i].mysqlc != NULL)
       break;
   }
-  if(i == MAX_MYSQL_CONNECTORS)
+  if (i == MAX_MYSQL_CONNECTORS)
     return NULL ;
   struct mysql_connector* s = mysqlcd_array[i].mysqlc;
   mysqlc_free_columns_buffer(s);
@@ -580,10 +580,10 @@ row_values* mysqlc_get_next_row(mysqlc_descriptor* d) {
   u16_t i = 0 ;
   for (i = 0 ; i < MAX_MYSQL_CONNECTORS; i++)
   {
-    if(mysqlcd_array[i].mysqlc_d == d && mysqlcd_array[i].mysqlc != NULL)
+    if (mysqlcd_array[i].mysqlc_d == d && mysqlcd_array[i].mysqlc != NULL)
       break;
   }
-  if(i == MAX_MYSQL_CONNECTORS)
+  if (i == MAX_MYSQL_CONNECTORS)
     return NULL ;
   struct mysql_connector* s = mysqlcd_array[i].mysqlc;
 
@@ -686,7 +686,7 @@ void Encrypt_SHA1_addUncounted(struct mysql_connector* s,uint8_t data) {
   s->sha1_buffer.b[s->bufferOffset ^ 3] = data;
   s->bufferOffset++;
   if (s->bufferOffset == BLOCK_LENGTH) {
-  Encrypt_SHA1_hashBlock(s);
+    Encrypt_SHA1_hashBlock(s);
     s->bufferOffset = 0;
   }
 }
@@ -817,18 +817,18 @@ uint8_t* Encrypt_SHA1_result(struct mysql_connector* s) {
  */
 u16_t mysqlc_create( mysqlc_descriptor* d ){
   u16_t i = 0 ;
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
+  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
     if(mysqlcd_array[i].mysqlc_d == d)
       return 1 ;
   }
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
+  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
     if(mysqlcd_array[i].mysqlc_d == NULL && mysqlcd_array[i].mysqlc == NULL)
       break;
   }
-  if(i == MAX_MYSQL_CONNECTORS)
+  if (i == MAX_MYSQL_CONNECTORS)
     return 1 ;
   mysqlcd_array[i].mysqlc = mem_malloc(sizeof(struct mysql_connector));
-  if(mysqlcd_array[i].mysqlc == NULL)
+  if (mysqlcd_array[i].mysqlc == NULL)
     return 1 ;
   memset(mysqlcd_array[i].mysqlc,0,sizeof(struct mysql_connector));
   mysqlcd_array[i].mysqlc->connected = 0 ;
@@ -855,7 +855,7 @@ static err_t mysqlc_send_request_allocated(struct mysql_connector* mysqlc_ptr)
   struct tcp_pcb *pcb = NULL;
   err_t ret_code = ERR_OK,err;
   pcb = tcp_new();
-  if(NULL == pcb)
+  if (NULL == pcb)
   {
     LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_send_request_allocated(): calling tcp_new can not allocate memory for PCB.\n"));
     err = ERR_MEM;
@@ -866,12 +866,11 @@ static err_t mysqlc_send_request_allocated(struct mysql_connector* mysqlc_ptr)
   tcp_arg(pcb, mysqlc_ptr);
   tcp_poll(pcb, mysqlc_poll, MYSQLC_POLL_INTERVAL);
   tcp_err(pcb, mysqlc_err);
-
   mysqlc_ptr->remote_ipaddr.addr = ipaddr_addr(mysqlc_ptr->hostname);
   err = mysqlc_ptr->remote_ipaddr.addr == IPADDR_NONE ? ERR_ARG : ERR_OK;
-  if(err == ERR_OK){
+  if (err == ERR_OK) {
     ret_code = tcp_connect(pcb, &mysqlc_ptr->remote_ipaddr, mysqlc_ptr->port, mysqlc_connected);
-    if(ERR_OK != ret_code)
+    if (ERR_OK != ret_code)
     {
       LWIP_DEBUGF(MYSQLC_DEBUG, ("tcp_connect():no memory is available for enqueueing the SYN segment %d\n",ret_code));
       goto deallocate_and_leave;
@@ -880,8 +879,7 @@ static err_t mysqlc_send_request_allocated(struct mysql_connector* mysqlc_ptr)
     LWIP_DEBUGF(MYSQLC_DEBUG, ("dns_gethostbyname failed: %d\n", (u16_t)err));
     goto deallocate_and_leave;
   }
-
- return ERR_OK;
+  return ERR_OK;
 deallocate_and_leave:
   if (pcb != NULL) {
     tcp_arg(pcb, NULL);
@@ -919,10 +917,10 @@ u16_t mysqlc_connect(mysqlc_descriptor* d ,const char* hostname ,u16_t port, con
     if(mysqlcd_array[i].mysqlc_d == d && mysqlcd_array[i].mysqlc != NULL)
       break;
   }
-  if(i == MAX_MYSQL_CONNECTORS)
+  if (i == MAX_MYSQL_CONNECTORS)
     return 1 ;
   struct mysql_connector* mysqlc_ptr = mysqlcd_array[i].mysqlc;
-  if(mysqlc_ptr->connected)
+  if (mysqlc_ptr->connected)
     return 1 ;
   mysqlc_ptr->hostname = hostname;
   mysqlc_ptr->username = username;
@@ -930,7 +928,7 @@ u16_t mysqlc_connect(mysqlc_descriptor* d ,const char* hostname ,u16_t port, con
   mysqlc_ptr->port = port;
 
   err_t err = mysqlc_send_request_allocated(mysqlc_ptr);
-  if(err != ERR_OK)
+  if (err != ERR_OK)
     return 1;
   mysqlc_ptr->connector_state = CONNECTOR_STATE_CONNECTING;
   mysqlc_ptr->es = CONNECTOR_ERROR_OK;
@@ -955,15 +953,15 @@ u16_t mysqlc_disconnect(mysqlc_descriptor*d)
     if(mysqlcd_array[i].mysqlc_d == d && mysqlcd_array[i].mysqlc != NULL)
       break;
   }
-  if(i == MAX_MYSQL_CONNECTORS)
+  if (i == MAX_MYSQL_CONNECTORS)
     return 1 ;
   /* Don't disconnect a busy connector */
-  if(mysqlcd_array[i].mysqlc->connector_state != CONNECTOR_STATE_IDLE){
+  if (mysqlcd_array[i].mysqlc->connector_state != CONNECTOR_STATE_IDLE) {
     return 1 ;
   }
-  if(mysqlc_close(mysqlcd_array[i].mysqlc))
+  if (mysqlc_close(mysqlcd_array[i].mysqlc))
     return 1 ;
-  if(mysqlcd_array[i].mysqlc->connected){
+  if (mysqlcd_array[i].mysqlc->connected) {
     mysqlcd_array[i].mysqlc->connected = 0 ;
     mysqlcd_array[i].mysqlc->connector_state = CONNECTOR_STATE_IDLE ;
     mysqlcd_array[i].mysqlc->es = CONNECTOR_ERROR_OK;
@@ -988,13 +986,13 @@ u16_t mysqlc_disconnect(mysqlc_descriptor*d)
 u16_t mysqlc_delete(mysqlc_descriptor*d)
 {
   u16_t i = 0 ;
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
+  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
     if(mysqlcd_array[i].mysqlc_d == d)
       break;
   }
-  if(i == MAX_MYSQL_CONNECTORS)
+  if (i == MAX_MYSQL_CONNECTORS)
     return 1 ;
-  if(mysqlcd_array[i].mysqlc->connected || mysqlcd_array[i].mysqlc->connector_state != CONNECTOR_STATE_IDLE)
+  if (mysqlcd_array[i].mysqlc->connected || mysqlcd_array[i].mysqlc->connector_state != CONNECTOR_STATE_IDLE)
     return 1 ;
   mem_free(mysqlcd_array[i].mysqlc);
   mysqlcd_array[i].mysqlc = NULL;
@@ -1020,11 +1018,11 @@ u16_t mysqlc_delete(mysqlc_descriptor*d)
 u16_t mysqlc_get_state(mysqlc_descriptor*d,enum state* state)
 {
   u16_t i ;
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
-    if(mysqlcd_array[i].mysqlc_d == d)
+  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
+    if (mysqlcd_array[i].mysqlc_d == d)
       break;
   }
-  if(i == MAX_MYSQL_CONNECTORS)
+  if (i == MAX_MYSQL_CONNECTORS)
     return 1 ;
   *state = mysqlcd_array[i].mysqlc->connector_state;
   return 0 ;
@@ -1045,11 +1043,11 @@ u16_t mysqlc_get_state(mysqlc_descriptor*d,enum state* state)
 u16_t mysqlc_get_error_state(mysqlc_descriptor*d,enum error_state* es)
 {
   u16_t i ;
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
-    if(mysqlcd_array[i].mysqlc_d == d)
+  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
+    if (mysqlcd_array[i].mysqlc_d == d)
       break;
   }
-  if(i == MAX_MYSQL_CONNECTORS)
+  if (i == MAX_MYSQL_CONNECTORS)
     return 1 ;
   *es = mysqlcd_array[i].mysqlc->es;
   return 0 ;
@@ -1066,11 +1064,11 @@ u16_t mysqlc_get_error_state(mysqlc_descriptor*d,enum error_state* es)
 u16_t mysqlc_is_connected(mysqlc_descriptor*d, char* connected)
 {
   u16_t i ;
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
-    if(mysqlcd_array[i].mysqlc_d == d)
+  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
+    if (mysqlcd_array[i].mysqlc_d == d)
       break;
   }
-  if(i == MAX_MYSQL_CONNECTORS)
+  if (i == MAX_MYSQL_CONNECTORS)
     return 1 ;
   *connected = mysqlcd_array[i].mysqlc->connected;
   return 0 ;
@@ -1089,26 +1087,26 @@ u16_t mysqlc_is_connected(mysqlc_descriptor*d, char* connected)
  */
 u16_t mysqlc_execute(mysqlc_descriptor*d,const char* query){
   u16_t i ;
-  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++){
-    if(mysqlcd_array[i].mysqlc_d == d)
+  for (i = 0 ; i<MAX_MYSQL_CONNECTORS ;i++) {
+    if (mysqlcd_array[i].mysqlc_d == d)
       break;
   }
-  if(i == MAX_MYSQL_CONNECTORS)
+  if (i == MAX_MYSQL_CONNECTORS)
     return 1 ;
   struct mysql_connector* s = mysqlcd_array[i].mysqlc;
 
-  if(!s->connected)
+  if (!s->connected)
     return 1 ;
-  if(s->connector_state != CONNECTOR_STATE_IDLE && s->connector_state != CONNECTOR_STATE_CONNECTOR_ERROR)
+  if (s->connector_state != CONNECTOR_STATE_IDLE && s->connector_state != CONNECTOR_STATE_CONNECTOR_ERROR)
     return 1;
-  if(s->p){
+  if (s->p) {
     pbuf_free(s->p);
     s->p = NULL;
     s->p_index = 0 ;
   }
   u16_t query_len = strlen(query);
   s->payload  = (char*) mem_malloc( query_len + 5 );
-  if(!s->payload)
+  if (!s->payload)
     return 1 ;
   mysqlc_free_columns_buffer(s);
   mysqlc_free_row_buffer(s);
@@ -1117,7 +1115,7 @@ u16_t mysqlc_execute(mysqlc_descriptor*d,const char* query){
   s->payload[3] = 0x00;
   s->payload[4] = 0x03;  // command packet
   s->payload_len = query_len + 5;
-  if(mysqlc_send(s->pcb,s) != ERR_OK)
+  if (mysqlc_send(s->pcb,s) != ERR_OK)
     return 1;
   s->connector_state = CONNECTOR_STATE_SENDING;
   s->es = CONNECTOR_ERROR_OK;
@@ -1159,11 +1157,11 @@ void mysqlc_err(void *arg, err_t err)
 {
   struct mysql_connector *s = arg;
   LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_err():error at client : %d\n",err));
-  if(s->connector_state == CONNECTOR_STATE_CONNECTING  && (s->state <= MYSQLC_SENT)){
+  if (s->connector_state == CONNECTOR_STATE_CONNECTING  && (s->state <= MYSQLC_SENT)) {
     s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
     s->es = CONNECTOR_ERROR_TCP_ERROR;
     s->state = MYSQLC_CLOSED;
-  }else if (s->connected){
+  }else if (s->connected) {
     s->connected = 0 ;
   }
   s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
@@ -1188,7 +1186,7 @@ err_t mysqlc_poll(void *arg, struct tcp_pcb *pcb)
   if (arg != NULL) {
     struct mysql_connector *s = arg;
     LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll(): %d\n",s->timer));
-    if(s->connector_state == CONNECTOR_STATE_CONNECTING){
+    if (s->connector_state == CONNECTOR_STATE_CONNECTING){
       if (s->timer != 0) {
         s->timer--;
       }
@@ -1201,7 +1199,7 @@ err_t mysqlc_poll(void *arg, struct tcp_pcb *pcb)
         s->state = MYSQLC_CLOSED;
         ret_code = ERR_ABRT;
       }
-    }else if(s->connector_state == CONNECTOR_STATE_SENDING)
+    }else if (s->connector_state == CONNECTOR_STATE_SENDING)
     {
       if (s->timer != 0) {
         s->timer--;
@@ -1229,22 +1227,22 @@ static void
 mysqlc_cleanup(struct mysql_connector *s)
 {
   LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_cleanup()\n"));
-  if(s->pcb){
+  if (s->pcb) {
     /* try to clean up the pcb if not already deallocated*/
     //mysqlc_close(s);
     s->pcb = NULL;
   }
-  if(s->payload){
+  if (s->payload) {
     mem_free(s->payload);
     s->payload = NULL;
   }
-  if(s->server_version){
+  if (s->server_version) {
     mem_free(s->server_version);
     s->server_version = NULL;
   }
   mysqlc_free_columns_buffer(s);
   mysqlc_free_row_buffer(s);
-  if(s->p){
+  if (s->p) {
     pbuf_free(s->p);
     s->p = NULL;
     s->p_index = 0 ;
@@ -1298,13 +1296,13 @@ void parse_handshake_packet(struct mysql_connector* s,struct pbuf *p)
 {
   u16_t len = strlen(&(((char*)p->payload)[5]));
   s->server_version = (char*)mem_malloc(len + 1);
-  if(s->server_version)
+  if (s->server_version)
     strcpy(s->server_version,&(((char*)p->payload)[5]));
   u16_t seed_index = len + 6  + 4;
-  for(u16_t i = 0 ; i < 8 ; i++)
+  for (u16_t i = 0 ; i < 8 ; i++)
     s->seed[i] = ((char*)p->payload)[seed_index + i ];
   seed_index += 27 ;
-  for(u16_t i = 0 ; i < 12 ; i++)
+  for (u16_t i = 0 ; i < 12 ; i++)
   {
     s->seed[i + 8] = ((char*)p->payload)[seed_index + i ];
   }
@@ -1327,7 +1325,7 @@ err_t mysqlc_send(struct tcp_pcb *pcb,struct mysql_connector* s){
   u16_t len ;
   err_t ret_code = ERR_OK,err = ERR_OK;
   len=s->payload_len - s->payload_sent;
-  if(len > tcp_sndbuf(pcb)){
+  if (len > tcp_sndbuf(pcb)) {
     LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_send: request length is Larger than max amount%d\n",err));
     len = tcp_sndbuf(pcb);
   }
@@ -1443,7 +1441,7 @@ void store_int(char *buff, u32_t value, u16_t size) {
 err_t send_authentication_packet( struct mysql_connector* s, struct tcp_pcb *pcb,const char *user,const char *password)
 {
   s->payload = (char*) mem_malloc(256);
-  if(s){
+  if (s) {
     u16_t size_send = 4;
     err_t err = ERR_OK;
     // client flags
@@ -1577,7 +1575,7 @@ u16_t read_int(char* buffer,u16_t offset, u16_t size) {
  *                   MYSQL_ERROR_PACKET: if the passed buffer is NULL.
 */
 u16_t check_ok_packet(char* buffer) {
-  if(buffer != NULL){
+  if (buffer != NULL) {
     u16_t type = buffer[4];
     if (type != MYSQL_OK_PACKET)
       return type;
@@ -1647,7 +1645,7 @@ mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
   err_t ret_code = ERR_OK;
   struct mysql_connector* s = arg;
   LWIP_UNUSED_ARG(err);
-  if(p != NULL)
+  if (p != NULL)
   {
     /* if buffer is not empty */
     struct pbuf *q;
@@ -1658,22 +1656,22 @@ mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
     }else {
       pbuf_cat(s->p, p);
     }
-    if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == MYSQLC_CONNECTED){
+    if (s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == MYSQLC_CONNECTED) {
       /*
        * if the connector is just connected to the server, then it parse the handshake packet
        * and sends the authentication data to the server.
       */
-      if(p->tot_len > 4){
+      if (p->tot_len > 4) {
         u32_t packet_length = ((char*)p->payload)[0];
         packet_length += ((char*)p->payload)[1]<<8;
         packet_length += ((char*)p->payload)[2]<<16;
-        if(p->tot_len >= packet_length + 4){
+        if (p->tot_len >= packet_length + 4) {
           parse_handshake_packet(s,p);
           tcp_recved(pcb, p->tot_len);
           pbuf_free(p);
           s->p = NULL;
           err_t err = send_authentication_packet(s,pcb,(const char*)s->username,(const char*)s->password);
-          if(err != ERR_OK){
+          if (err != ERR_OK) {
             s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
             s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
             /* Don't Need to close the connection as the server will already abort it on time out ??*/
@@ -1683,18 +1681,18 @@ mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
           }
         }
       }
-    }else if (s->connector_state == CONNECTOR_STATE_CONNECTING && (s->state == MYSQLC_RECV || s->state == MYSQLC_SENT)){
+    }else if (s->connector_state == CONNECTOR_STATE_CONNECTING && (s->state == MYSQLC_RECV || s->state == MYSQLC_SENT)) {
       /*
        *  if the connector already have sent authentication data to the server. it parses ok packet,
        * if received "OK" packet then the connection is successfull and the connector state is changed to
        *  CONNECTOR_STATE_IDLE and error state to CONNECTOR_ERROR_OK to tell the application it's ready
        *  to send data.
        */
-      if(p->tot_len > 4){
+      if (p->tot_len > 4) {
         u32_t packet_length = ((char*)p->payload)[0];
         packet_length += ((char*)p->payload)[1]<<8;
         packet_length += ((char*)p->payload)[2]<<16;
-        if(p->tot_len >= packet_length + 4){
+        if (p->tot_len >= packet_length + 4) {
           if (check_ok_packet((char*)p->payload) != 0) {
             parse_error_packet((char*)p->payload,p->tot_len);
             // return false; meaning tell the user we don't have the connection , further close it...
@@ -1717,18 +1715,18 @@ mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
           s->p = NULL;
         }
       }
-    }else if (s->connector_state == CONNECTOR_STATE_SENDING){
+    }else if (s->connector_state == CONNECTOR_STATE_SENDING) {
       /* 
        * if the connector already have sent query,it parses ok packet,
        * if received "OK" packet then the connection is successfull and the connector state is changed to
        * CONNECTOR_STATE_IDLE and error state to CONNECTOR_ERROR_OK to tell the application it can parse
        * the received query response s->p .
        */
-      if(p->tot_len > 4){
+      if (p->tot_len > 4) {
         u32_t packet_length = ((char*)p->payload)[0];
         packet_length += ((char*)p->payload)[1]<<8;
         packet_length += ((char*)p->payload)[2]<<16;
-        if(p->tot_len >= packet_length + 4){
+        if (p->tot_len >= packet_length + 4) {
           if (check_ok_packet((char*)p->payload) != 0) {
             parse_error_packet((char*)p->payload,p->tot_len);
             // return false; meaning tell the user we don't have the connection , further close it...
@@ -1760,8 +1758,8 @@ mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
      * if the connection is closed while sending data or during negotiation.
      */
     LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_recv: connection closed by remote host\n"));
-    if((s->connector_state == CONNECTOR_STATE_CONNECTING  )
-        && (s->state == MYSQLC_CONNECTED || s->state == MYSQLC_RECV || s->state == MYSQLC_SENT)){
+    if ((s->connector_state == CONNECTOR_STATE_CONNECTING  )
+        && (s->state == MYSQLC_CONNECTED || s->state == MYSQLC_RECV || s->state == MYSQLC_SENT)) {
       s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
       s->es = CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION;
     }
@@ -1788,13 +1786,13 @@ err_t mysqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
   struct mysql_connector * s = arg;
   LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_sent:Done Sending to client : %d\n",len));
   /* the connector timer for timeout is reset so that the connection will not be closed, not waiting any more*/
-  if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == MYSQLC_RECV){
+  if (s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == MYSQLC_RECV) {
     s->timer = MYSQLC_TIMEOUT;
-  }else if (s->connector_state == CONNECTOR_STATE_SENDING){
+  }else if (s->connector_state == CONNECTOR_STATE_SENDING) {
     s->timer = MYSQLC_TIMEOUT;
   }  
   s->payload_sent +=len;
-  if(s->payload && s->payload_len - s->payload_sent)
+  if (s->payload && s->payload_len - s->payload_sent)
   {
     /* if the sending buffer has more data, try to continue sending data */
     mysqlc_send(pcb,s);
@@ -1803,7 +1801,7 @@ err_t mysqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
   {
     /* if the sending buffer is empty, change the pcb state to MYSQLC_SENT and clean up allocated buffers */
     s->state = MYSQLC_SENT;
-    if (s->payload && !(s->payload_len - s->payload_sent)){
+    if (s->payload && !(s->payload_len - s->payload_sent)) {
       mem_free(s->payload);
       s->payload = NULL;
       s->payload_sent = 0;

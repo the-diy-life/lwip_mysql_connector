@@ -64,10 +64,10 @@ void connect_periodic_handler(void)
 {
   u16_t ret = 0 ;
   char connected = 0 ;
-  switch(cs){
+  switch (cs) {
     case CONNECT_INIT:
       ret = mysqlc_create(&sd);
-      if(!ret){
+      if (!ret) {
         ret = mysqlc_connect(&sd,hostname,3306,username,password);
         if(!ret)
           cs = CONNECT_LOOP;

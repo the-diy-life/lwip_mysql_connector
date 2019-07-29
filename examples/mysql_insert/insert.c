@@ -78,7 +78,7 @@ void insert_periodic_handler(u32_t time)
 {
   int ret = 0 ;
   char connected = 0 ;
-  switch(cs){
+  switch (cs) {
     case INIT:
       ret = mysqlc_create(&sd);
       if(!ret){
@@ -87,7 +87,7 @@ void insert_periodic_handler(u32_t time)
       break;
     case CONNECT:
       ret = mysqlc_connect(&sd,hostname,3306,username,password);
-      if(!ret)
+      if (!ret)
         cs = CONNECTING;
       else{
         mysqlc_delete(&sd);
@@ -96,9 +96,9 @@ void insert_periodic_handler(u32_t time)
       break;
      case CONNECTING:
       ret = mysqlc_is_connected(&sd,&connected);
-      if(ret)
+      if (ret)
         cs = INIT;/* No connector then recreate it*/
-      else if(!connected){
+      else if (!connected){
         enum state state;
         ret = mysqlc_get_state(&sd,&state);
         if(ret)
@@ -113,9 +113,9 @@ void insert_periodic_handler(u32_t time)
       break;
     case CONNECTED:
       ret = mysqlc_is_connected(&sd,&connected);
-      if(ret)
+      if (ret)
         cs = INIT;
-      else if(!connected){
+      else if (!connected){
         LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Not Connected\n"));
         cs =  CONNECT;
       }else{

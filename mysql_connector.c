@@ -853,36 +853,36 @@ u16_t mysqlc_create( mysqlc_descriptor* d ){
  */
 static err_t mysqlc_send_request_allocated(struct mysql_connector* mysqlc_ptr)
 {
-   struct tcp_pcb *pcb = NULL;
-   err_t ret_code = ERR_OK,err;
-   pcb = tcp_new();
-   if(NULL == pcb)
-   {
-     LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_send_request_allocated(): calling tcp_new can not allocate memory for PCB.\n\r"));
-     err = ERR_MEM;
-     goto leave;
-   }
-   mysqlc_ptr->pcb = pcb;
-   mysqlc_ptr->timer = MYSQLC_TIMEOUT;
-   tcp_arg(pcb, mysqlc_ptr);
-   tcp_poll(pcb, mysqlc_poll, MYSQLC_POLL_INTERVAL);
-   tcp_err(pcb, mysqlc_err);
+  struct tcp_pcb *pcb = NULL;
+  err_t ret_code = ERR_OK,err;
+  pcb = tcp_new();
+  if(NULL == pcb)
+  {
+    LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_send_request_allocated(): calling tcp_new can not allocate memory for PCB.\n\r"));
+    err = ERR_MEM;
+    goto leave;
+  }
+  mysqlc_ptr->pcb = pcb;
+  mysqlc_ptr->timer = MYSQLC_TIMEOUT;
+  tcp_arg(pcb, mysqlc_ptr);
+  tcp_poll(pcb, mysqlc_poll, MYSQLC_POLL_INTERVAL);
+  tcp_err(pcb, mysqlc_err);
 
-   mysqlc_ptr->remote_ipaddr.addr = ipaddr_addr(mysqlc_ptr->hostname);
-   err = mysqlc_ptr->remote_ipaddr.addr == IPADDR_NONE ? ERR_ARG : ERR_OK;
-   if(err == ERR_OK){
-     ret_code = tcp_connect(pcb, &mysqlc_ptr->remote_ipaddr, mysqlc_ptr->port, mysqlc_connected);
-     if(ERR_OK != ret_code)
-     {
-         LWIP_DEBUGF(MYSQLC_DEBUG, ("tcp_connect():no memory is available for enqueueing the SYN segment %d\n\r",ret_code));
-         goto deallocate_and_leave;
-     }
-   }else if (err != ERR_INPROGRESS) {
-      LWIP_DEBUGF(MYSQLC_DEBUG, ("dns_gethostbyname failed: %d\r\n", (u16_t)err));
-      goto deallocate_and_leave;
-   }
+  mysqlc_ptr->remote_ipaddr.addr = ipaddr_addr(mysqlc_ptr->hostname);
+  err = mysqlc_ptr->remote_ipaddr.addr == IPADDR_NONE ? ERR_ARG : ERR_OK;
+  if(err == ERR_OK){
+    ret_code = tcp_connect(pcb, &mysqlc_ptr->remote_ipaddr, mysqlc_ptr->port, mysqlc_connected);
+    if(ERR_OK != ret_code)
+    {
+        LWIP_DEBUGF(MYSQLC_DEBUG, ("tcp_connect():no memory is available for enqueueing the SYN segment %d\n\r",ret_code));
+        goto deallocate_and_leave;
+    }
+  }else if (err != ERR_INPROGRESS) {
+     LWIP_DEBUGF(MYSQLC_DEBUG, ("dns_gethostbyname failed: %d\r\n", (u16_t)err));
+     goto deallocate_and_leave;
+  }
 
-  return ERR_OK;
+ return ERR_OK;
 deallocate_and_leave:
   if (pcb != NULL) {
     tcp_arg(pcb, NULL);
@@ -1137,15 +1137,14 @@ u16_t mysqlc_execute(mysqlc_descriptor*d,const char* query){
  * 
 */
 err_t mysqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err)
- {
-     err_t ret_code = ERR_OK;
-     struct mysql_connector* mysqlc_ptr = arg;
-   LWIP_UNUSED_ARG(err); /* for some compilers warnings. */
-   mysqlc_ptr->timer = MYSQLC_TIMEOUT;
-   tcp_recv(pcb, mysqlc_recv);
-   mysqlc_ptr->state = MYSQLC_CONNECTED ;
-
-   return ret_code;
+{
+  err_t ret_code = ERR_OK;
+  struct mysql_connector* mysqlc_ptr = arg;
+  LWIP_UNUSED_ARG(err); /* for some compilers warnings. */
+  mysqlc_ptr->timer = MYSQLC_TIMEOUT;
+  tcp_recv(pcb, mysqlc_recv);
+  mysqlc_ptr->state = MYSQLC_CONNECTED ;
+  return ret_code;
 }
 /**
  * @brief Callback function ,called by the LWIP TCP stack when an error 
@@ -1158,21 +1157,21 @@ err_t mysqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err)
  * 
 */
 void mysqlc_err(void *arg, err_t err)
- {
-   struct mysql_connector *s = arg;
-   LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_err():error at client : %d\n\r",err));
-   if(s->connector_state == CONNECTOR_STATE_CONNECTING  && (s->state <= MYSQLC_SENT)){
-     s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
-     s->es = CONNECTOR_ERROR_TCP_ERROR;
-     s->state = MYSQLC_CLOSED;
-   }else if (s->connected){
-     s->connected = 0 ;
-   }
-   s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
-   s->es = CONNECTOR_ERROR_TCP_ERROR;
-   s->state = MYSQLC_CLOSED;
-   //@ TODO handle other events, basically we check the connector state and the session state...
-   mysqlc_cleanup(s);
+{
+  struct mysql_connector *s = arg;
+  LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_err():error at client : %d\n\r",err));
+  if(s->connector_state == CONNECTOR_STATE_CONNECTING  && (s->state <= MYSQLC_SENT)){
+    s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
+    s->es = CONNECTOR_ERROR_TCP_ERROR;
+    s->state = MYSQLC_CLOSED;
+  }else if (s->connected){
+    s->connected = 0 ;
+  }
+  s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
+  s->es = CONNECTOR_ERROR_TCP_ERROR;
+  s->state = MYSQLC_CLOSED;
+  //@ TODO handle other events, basically we check the connector state and the session state...
+  mysqlc_cleanup(s);
 }
 /**
  * @brief Raw API TCP poll callback.
@@ -1185,7 +1184,7 @@ void mysqlc_err(void *arg, err_t err)
 */
 err_t mysqlc_poll(void *arg, struct tcp_pcb *pcb)
 {
-    err_t ret_code = ERR_OK,err;
+  err_t ret_code = ERR_OK,err;
   LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll()\r\n"));
   if (arg != NULL) {
     struct mysql_connector *s = arg;
@@ -1194,7 +1193,7 @@ err_t mysqlc_poll(void *arg, struct tcp_pcb *pcb)
       if (s->timer != 0) {
         s->timer--;
       }
-       /* idle timer, close connection if timed out */
+      /* idle timer, close connection if timed out */
       if (s->timer == 0) {
         LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll: connection timed out, closing\n\r"));
         mysqlc_close(s); // TODO handle it's return...
@@ -1210,8 +1209,8 @@ err_t mysqlc_poll(void *arg, struct tcp_pcb *pcb)
       }
 
       if (s->timer == 0) {
-          s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
-          s->es = CONNECTOR_ERROR_SENDING;
+        s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
+        s->es = CONNECTOR_ERROR_SENDING;
       }
     }
     /// @TODO handle other events..
@@ -1365,34 +1364,34 @@ char scramble_password(struct mysql_connector* s,const char* password , char* pw
   char hash3[20];
   char pwd_buffer[40];
 
-    if (strlen(password) == 0)
-      return 0;
+  if (strlen(password) == 0)
+    return 0;
 
-    // hash1
-    Encrypt_SHA1_init(s);
-    Encrypt_SHA1_print(s,password);
-    digest = Encrypt_SHA1_result(s);
-    memcpy(hash1, digest, 20);
+  // hash1
+  Encrypt_SHA1_init(s);
+  Encrypt_SHA1_print(s,password);
+  digest = Encrypt_SHA1_result(s);
+  memcpy(hash1, digest, 20);
 
-    // hash2
-    Encrypt_SHA1_init(s);
-    Encrypt_SHA1_write_arr(s,hash1, 20);
-    digest = Encrypt_SHA1_result(s);
-    memcpy(hash2, digest, 20);
+  // hash2
+  Encrypt_SHA1_init(s);
+  Encrypt_SHA1_write_arr(s,hash1, 20);
+  digest = Encrypt_SHA1_result(s);
+  memcpy(hash2, digest, 20);
 
-    // hash3 of seed + hash2
-    Encrypt_SHA1_init(s);
-    memcpy(pwd_buffer, &s->seed, 20);
-    memcpy(pwd_buffer+20, hash2, 20);
-    Encrypt_SHA1_write_arr(s,pwd_buffer, 40);
-    digest = Encrypt_SHA1_result(s);
-    memcpy(hash3, digest, 20);
+  // hash3 of seed + hash2
+  Encrypt_SHA1_init(s);
+  memcpy(pwd_buffer, &s->seed, 20);
+  memcpy(pwd_buffer+20, hash2, 20);
+  Encrypt_SHA1_write_arr(s,pwd_buffer, 40);
+  digest = Encrypt_SHA1_result(s);
+  memcpy(hash3, digest, 20);
 
-    // XOR for hash4
-    for (u16_t i = 0; i < 20; i++)
-      pwd_hash[i] = hash1[i] ^ hash3[i];
+  // XOR for hash4
+  for (u16_t i = 0; i < 20; i++)
+    pwd_hash[i] = hash1[i] ^ hash3[i];
 
-    return 1;
+  return 1;
 }
 /**
  *  @brief Store an integer value into a byte array of size bytes.
@@ -1476,29 +1475,29 @@ err_t send_authentication_packet( struct mysql_connector* s, struct tcp_pcb *pcb
     s->payload[size_send-1] = 0x00;
 
     // password - see scramble password
-     char scramble[20];
-     if (scramble_password(s,password, scramble)) {
-       s->payload[size_send] = 0x14;
-       size_send += 1;
-       for (u16_t i = 0; i < 20; i++)
-         s->payload[i+size_send] = scramble[i];
-       size_send += 20;
-       s->payload[size_send] = 0x00;
-     }
-     // terminate password response
-     s->payload[size_send] = 0x00;
-     size_send += 1;
+    char scramble[20];
+    if (scramble_password(s,password, scramble)) {
+      s->payload[size_send] = 0x14;
+      size_send += 1;
+      for (u16_t i = 0; i < 20; i++)
+        s->payload[i+size_send] = scramble[i];
+      size_send += 20;
+      s->payload[size_send] = 0x00;
+    }
+    // terminate password response
+    s->payload[size_send] = 0x00;
+    size_send += 1;
 
-     // database
-     s->payload[size_send+1] = 0x00;
-     size_send += 1;
-     s->payload_len = size_send;
-     // Write packet size
-     u16_t p_size = size_send - 4;
-     store_int(&s->payload[0], p_size, 3);
-     s->payload[3] = 0x01;
-     err = mysqlc_send(pcb, s);
-     return err;
+    // database
+    s->payload[size_send+1] = 0x00;
+    size_send += 1;
+    s->payload_len = size_send;
+    // Write packet size
+    u16_t p_size = size_send - 4;
+    store_int(&s->payload[0], p_size, 3);
+    s->payload[3] = 0x01;
+    err = mysqlc_send(pcb, s);
+    return err;
   }
   return ERR_MEM;
 }
@@ -1545,9 +1544,9 @@ u16_t read_int(char* buffer,u16_t offset, u16_t size) {
   u16_t value = 0;
   u16_t new_size = 0;
   if (size == 0)
-     new_size = get_lcb_len(buffer,offset);
+    new_size = get_lcb_len(buffer,offset);
   if (size == 1)
-     return buffer[offset];
+    return buffer[offset];
   new_size = size;
   u16_t shifter = (new_size - 1) * 8;
   for (u16_t i = new_size; i > 0; i--) {
@@ -1583,7 +1582,7 @@ u16_t check_ok_packet(char* buffer) {
   if(buffer != NULL){
     u16_t type = buffer[4];
     if (type != MYSQL_OK_PACKET)
-    return type;
+      return type;
     return 0;
   }
   return MYSQL_ERROR_PACKET;
@@ -1647,132 +1646,131 @@ void parse_error_packet(char* buffer,u16_t packet_len) {
 err_t
 mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
-     err_t ret_code = ERR_OK;
-     struct mysql_connector* s = arg;
-   LWIP_UNUSED_ARG(err);
-   if(p != NULL)
-   {
-     /* if buffer is not empty */
-     struct pbuf *q;
-     u16_t i =0;
-     /* received data */
-     if (s->p == NULL) {
-        s->p = p;
-     }else {
-        pbuf_cat(s->p, p);
-     }
-     if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == MYSQLC_CONNECTED){
-       /*
-        * if the connector is just connected to the server, then it parse the handshake packet
-         * and sends the authentication data to the server.
-       */
-       if(p->tot_len > 4){
-         u32_t packet_length = ((char*)p->payload)[0];
-         packet_length += ((char*)p->payload)[1]<<8;
-         packet_length += ((char*)p->payload)[2]<<16;
-         if(p->tot_len >= packet_length + 4){
-           parse_handshake_packet(s,p);
-           tcp_recved(pcb, p->tot_len);
-             pbuf_free(p);
-             s->p = NULL;
-             err_t err = send_authentication_packet(s,pcb,(const char*)s->username,(const char*)s->password);
-             if(err != ERR_OK){
-               s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
-               s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
-               /* Don't Need to close the connection as the server will already abort it on time out ??*/
-             }else{
-             s->es = CONNECTOR_ERROR_OK;
-             s->timer = MYSQLC_TIMEOUT;
-             }
-         }
-       }
-     }else if (s->connector_state == CONNECTOR_STATE_CONNECTING && (s->state == MYSQLC_RECV || s->state == MYSQLC_SENT)){
+  err_t ret_code = ERR_OK;
+  struct mysql_connector* s = arg;
+  LWIP_UNUSED_ARG(err);
+  if(p != NULL)
+  {
+    /* if buffer is not empty */
+    struct pbuf *q;
+    u16_t i =0;
+    /* received data */
+    if (s->p == NULL) {
+      s->p = p;
+    }else {
+      pbuf_cat(s->p, p);
+    }
+    if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == MYSQLC_CONNECTED){
+      /*
+       * if the connector is just connected to the server, then it parse the handshake packet
+       * and sends the authentication data to the server.
+      */
+      if(p->tot_len > 4){
+        u32_t packet_length = ((char*)p->payload)[0];
+        packet_length += ((char*)p->payload)[1]<<8;
+        packet_length += ((char*)p->payload)[2]<<16;
+        if(p->tot_len >= packet_length + 4){
+          parse_handshake_packet(s,p);
+          tcp_recved(pcb, p->tot_len);
+          pbuf_free(p);
+          s->p = NULL;
+          err_t err = send_authentication_packet(s,pcb,(const char*)s->username,(const char*)s->password);
+          if(err != ERR_OK){
+            s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
+            s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
+            /* Don't Need to close the connection as the server will already abort it on time out ??*/
+          }else{
+            s->es = CONNECTOR_ERROR_OK;
+            s->timer = MYSQLC_TIMEOUT;
+          }
+        }
+      }
+    }else if (s->connector_state == CONNECTOR_STATE_CONNECTING && (s->state == MYSQLC_RECV || s->state == MYSQLC_SENT)){
       /*
        *  if the connector already have sent authentication data to the server. it parses ok packet,
        * if received "OK" packet then the connection is successfull and the connector state is changed to
        *  CONNECTOR_STATE_IDLE and error state to CONNECTOR_ERROR_OK to tell the application it's ready
        *  to send data.
        */
-       if(p->tot_len > 4){
-         u32_t packet_length = ((char*)p->payload)[0];
-         packet_length += ((char*)p->payload)[1]<<8;
-         packet_length += ((char*)p->payload)[2]<<16;
-         if(p->tot_len >= packet_length + 4){
-              if (check_ok_packet((char*)p->payload) != 0) {
-                parse_error_packet((char*)p->payload,p->tot_len);
-                // return false; meaning tell the user we don't have the connection , further close it...
-                s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
-              s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
-              mysqlc_close(s);
-              }else{
-              LWIP_DEBUGF(MYSQLC_DEBUG, ("Connected to server version %s\n\r",s->server_version));
-              mem_free(s->server_version);
-              s->server_version = NULL;
+      if(p->tot_len > 4){
+        u32_t packet_length = ((char*)p->payload)[0];
+        packet_length += ((char*)p->payload)[1]<<8;
+        packet_length += ((char*)p->payload)[2]<<16;
+        if(p->tot_len >= packet_length + 4){
+          if (check_ok_packet((char*)p->payload) != 0) {
+            parse_error_packet((char*)p->payload,p->tot_len);
+            // return false; meaning tell the user we don't have the connection , further close it...
+            s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
+            s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
+            mysqlc_close(s);
+          }else{
+            LWIP_DEBUGF(MYSQLC_DEBUG, ("Connected to server version %s\n\r",s->server_version));
+            mem_free(s->server_version);
+            s->server_version = NULL;
 
-              s->timer = MYSQLC_TIMEOUT;
-              // Tell the application the Good news ?
-              s->connected = 1 ; // TODO handle error , sent , poll events.. if connected
-              s->connector_state = CONNECTOR_STATE_IDLE;
-              s->es = CONNECTOR_ERROR_OK;
-              }
-             tcp_recved(pcb, p->tot_len);
-               pbuf_free(p);
-               s->p = NULL;
-         }
-       }
-     }else if (s->connector_state == CONNECTOR_STATE_SENDING){
-       /* 
-        * if the connector already have sent query,it parses ok packet,
-        * if received "OK" packet then the connection is successfull and the connector state is changed to
-        * CONNECTOR_STATE_IDLE and error state to CONNECTOR_ERROR_OK to tell the application it can parse
-        * the received query response s->p .
-        */
-       if(p->tot_len > 4){
-         u32_t packet_length = ((char*)p->payload)[0];
-         packet_length += ((char*)p->payload)[1]<<8;
-         packet_length += ((char*)p->payload)[2]<<16;
-         if(p->tot_len >= packet_length + 4){
-              if (check_ok_packet((char*)p->payload) != 0) {
-                parse_error_packet((char*)p->payload,p->tot_len);
-                // return false; meaning tell the user we don't have the connection , further close it...
-                s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
-              s->es = CONNECTOR_ERROR_SENDING;
-              }else{
-              LWIP_DEBUGF(MYSQLC_DEBUG, ("Received \"Ok packet\" after sending Query \n\r"));
+            s->timer = MYSQLC_TIMEOUT;
+            // Tell the application the Good news ?
+            s->connected = 1 ; // TODO handle error , sent , poll events.. if connected
+            s->connector_state = CONNECTOR_STATE_IDLE;
+            s->es = CONNECTOR_ERROR_OK;
+          }
+          tcp_recved(pcb, p->tot_len);
+          pbuf_free(p);
+          s->p = NULL;
+        }
+      }
+    }else if (s->connector_state == CONNECTOR_STATE_SENDING){
+      /* 
+       * if the connector already have sent query,it parses ok packet,
+       * if received "OK" packet then the connection is successfull and the connector state is changed to
+       * CONNECTOR_STATE_IDLE and error state to CONNECTOR_ERROR_OK to tell the application it can parse
+       * the received query response s->p .
+       */
+      if(p->tot_len > 4){
+        u32_t packet_length = ((char*)p->payload)[0];
+        packet_length += ((char*)p->payload)[1]<<8;
+        packet_length += ((char*)p->payload)[2]<<16;
+        if(p->tot_len >= packet_length + 4){
+          if (check_ok_packet((char*)p->payload) != 0) {
+            parse_error_packet((char*)p->payload,p->tot_len);
+            // return false; meaning tell the user we don't have the connection , further close it...
+            s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
+            s->es = CONNECTOR_ERROR_SENDING;
+          }else{
+            LWIP_DEBUGF(MYSQLC_DEBUG, ("Received \"Ok packet\" after sending Query \n\r"));
 
-              // Tell the application the Good news ?
-              s->connector_state = CONNECTOR_STATE_IDLE;
-              s->es = CONNECTOR_ERROR_OK;
-              }
-             tcp_recved(pcb, p->tot_len);
-//           pbuf_free(p);
-//           s->p = NULL;
-         }
-       }
-
-     }else{
-       /* it's considered an unexpected response and ignored */
-       tcp_recved(pcb, p->tot_len);
-         //pbuf_free(p);
-     }
-       s->state = MYSQLC_RECV;
-   }
-   else{
-     /* 
-      * if the buffer is empty then the connection is closed
-      * by the remote server, an error flag CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION is sent to the application 
-      * if the connection is closed while sending data or during negotiation.
-      */
-     LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_recv: connection closed by remote host\n\r"));
-     if((s->connector_state == CONNECTOR_STATE_CONNECTING  )
-         && (s->state == MYSQLC_CONNECTED || s->state == MYSQLC_RECV || s->state == MYSQLC_SENT)){
-       s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
-       s->es = CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION;
-     }
-     mysqlc_close(s);
-     s->state = MYSQLC_CLOSED;
-   }
-   return ret_code;
+            // Tell the application the Good news ?
+            s->connector_state = CONNECTOR_STATE_IDLE;
+            s->es = CONNECTOR_ERROR_OK;
+          }
+          tcp_recved(pcb, p->tot_len);
+//        pbuf_free(p);
+//        s->p = NULL;
+        }
+      }
+    }else{
+      /* it's considered an unexpected response and ignored */
+      tcp_recved(pcb, p->tot_len);
+      //pbuf_free(p);
+    }
+    s->state = MYSQLC_RECV;
+  }
+  else{
+    /* 
+     * if the buffer is empty then the connection is closed
+     * by the remote server, an error flag CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION is sent to the application 
+     * if the connection is closed while sending data or during negotiation.
+     */
+    LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_recv: connection closed by remote host\n\r"));
+    if((s->connector_state == CONNECTOR_STATE_CONNECTING  )
+        && (s->state == MYSQLC_CONNECTED || s->state == MYSQLC_RECV || s->state == MYSQLC_SENT)){
+      s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
+      s->es = CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION;
+    }
+    mysqlc_close(s);
+    s->state = MYSQLC_CLOSED;
+  }
+  return ret_code;
 }
 /**
  * @brief Data has been sent and acknowledged by the remote host.
@@ -1794,12 +1792,10 @@ err_t mysqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
   LWIP_DEBUGF(MYSQLC_DEBUG,("\n\r"));
   /* the connector timer for timeout is reset so that the connection will not be closed, not waiting any more*/
   if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == MYSQLC_RECV){
-
     s->timer = MYSQLC_TIMEOUT;
   }else if (s->connector_state == CONNECTOR_STATE_SENDING){
     s->timer = MYSQLC_TIMEOUT;
-  }
-  
+  }  
   s->payload_sent +=len;
   if(s->payload && s->payload_len - s->payload_sent)
   {
@@ -1811,11 +1807,10 @@ err_t mysqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
     /* if the sending buffer is empty, change the pcb state to MYSQLC_SENT and clean up allocated buffers */
     s->state = MYSQLC_SENT;
     if (s->payload && !(s->payload_len - s->payload_sent)){
-    mem_free(s->payload);
-    s->payload = NULL;
-    s->payload_sent = 0;
+      mem_free(s->payload);
+      s->payload = NULL;
+      s->payload_sent = 0;
     }
   }
   return ERR_OK;
 }
-

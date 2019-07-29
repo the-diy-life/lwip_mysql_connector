@@ -51,8 +51,8 @@ mysqlc_descriptor sd;
 
 // two states (init , loop)
 enum connect_states{
-    CONNECT_INIT,
-    CONNECT_LOOP
+  CONNECT_INIT,
+  CONNECT_LOOP
 };
 
 const char hostname[] = "192.168.1.69";
@@ -62,34 +62,26 @@ const char password[] = "password";
 enum connect_states cs = CONNECT_INIT;
 void connect_periodic_handler(void)
 {
-    u16_t ret = 0 ;
-    char connected = 0 ;
-    switch(cs){
-
-        case CONNECT_INIT:
-            ret = mysqlc_create(&sd);
-            if(!ret){
-                ret = mysqlc_connect(&sd,hostname,3306,username,password);
-                if(!ret)
-                    cs = CONNECT_LOOP;
-                else{
-                    mysqlc_delete(&sd);
-                }
-            }
-
-            break;
-
-        case CONNECT_LOOP:
-            mysqlc_is_connected(&sd,&connected);
-            if(connected){
-                // success , celebrate...
-                 LWIP_DEBUGF(LWIP_DBG_ON, ("connect_periodic_handler():Connected\n\r"));
-
-            }
-            break;
-
-    }
-
-
-
+  u16_t ret = 0 ;
+  char connected = 0 ;
+  switch(cs){
+    case CONNECT_INIT:
+      ret = mysqlc_create(&sd);
+      if(!ret){
+        ret = mysqlc_connect(&sd,hostname,3306,username,password);
+        if(!ret)
+          cs = CONNECT_LOOP;
+        else{
+          mysqlc_delete(&sd);
+        }
+      }
+      break;
+    case CONNECT_LOOP:
+      mysqlc_is_connected(&sd,&connected);
+      if(connected){
+        // success , celebrate...
+        LWIP_DEBUGF(LWIP_DBG_ON, ("connect_periodic_handler():Connected\n\r"));
+      }
+      break;
+  }
 }

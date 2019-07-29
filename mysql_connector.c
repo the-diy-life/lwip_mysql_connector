@@ -801,7 +801,6 @@ uint8_t* Encrypt_SHA1_result(struct mysql_connector* s) {
     b|=a>>24;
     s->sha1_state.w[i]=b;
   }
-
   // Return pointer to hash (20 characters)
   return s->sha1_state.b;
 }
@@ -858,7 +857,7 @@ static err_t mysqlc_send_request_allocated(struct mysql_connector* mysqlc_ptr)
   pcb = tcp_new();
   if(NULL == pcb)
   {
-    LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_send_request_allocated(): calling tcp_new can not allocate memory for PCB.\n\r"));
+    LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_send_request_allocated(): calling tcp_new can not allocate memory for PCB.\n"));
     err = ERR_MEM;
     goto leave;
   }
@@ -874,12 +873,12 @@ static err_t mysqlc_send_request_allocated(struct mysql_connector* mysqlc_ptr)
     ret_code = tcp_connect(pcb, &mysqlc_ptr->remote_ipaddr, mysqlc_ptr->port, mysqlc_connected);
     if(ERR_OK != ret_code)
     {
-        LWIP_DEBUGF(MYSQLC_DEBUG, ("tcp_connect():no memory is available for enqueueing the SYN segment %d\n\r",ret_code));
-        goto deallocate_and_leave;
+      LWIP_DEBUGF(MYSQLC_DEBUG, ("tcp_connect():no memory is available for enqueueing the SYN segment %d\n",ret_code));
+      goto deallocate_and_leave;
     }
   }else if (err != ERR_INPROGRESS) {
-     LWIP_DEBUGF(MYSQLC_DEBUG, ("dns_gethostbyname failed: %d\r\n", (u16_t)err));
-     goto deallocate_and_leave;
+    LWIP_DEBUGF(MYSQLC_DEBUG, ("dns_gethostbyname failed: %d\n", (u16_t)err));
+    goto deallocate_and_leave;
   }
 
  return ERR_OK;
@@ -1159,7 +1158,7 @@ err_t mysqlc_connected(void *arg, struct tcp_pcb *pcb, err_t err)
 void mysqlc_err(void *arg, err_t err)
 {
   struct mysql_connector *s = arg;
-  LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_err():error at client : %d\n\r",err));
+  LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_err():error at client : %d\n",err));
   if(s->connector_state == CONNECTOR_STATE_CONNECTING  && (s->state <= MYSQLC_SENT)){
     s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
     s->es = CONNECTOR_ERROR_TCP_ERROR;
@@ -1185,17 +1184,17 @@ void mysqlc_err(void *arg, err_t err)
 err_t mysqlc_poll(void *arg, struct tcp_pcb *pcb)
 {
   err_t ret_code = ERR_OK,err;
-  LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll()\r\n"));
+  LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll()\n"));
   if (arg != NULL) {
     struct mysql_connector *s = arg;
-    LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll(): %d\n\r",s->timer));
+    LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll(): %d\n",s->timer));
     if(s->connector_state == CONNECTOR_STATE_CONNECTING){
       if (s->timer != 0) {
         s->timer--;
       }
       /* idle timer, close connection if timed out */
       if (s->timer == 0) {
-        LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll: connection timed out, closing\n\r"));
+        LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll: connection timed out, closing\n"));
         mysqlc_close(s); // TODO handle it's return...
         s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
         s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
@@ -1207,7 +1206,6 @@ err_t mysqlc_poll(void *arg, struct tcp_pcb *pcb)
       if (s->timer != 0) {
         s->timer--;
       }
-
       if (s->timer == 0) {
         s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
         s->es = CONNECTOR_ERROR_SENDING;
@@ -1216,9 +1214,9 @@ err_t mysqlc_poll(void *arg, struct tcp_pcb *pcb)
     /// @TODO handle other events..
   }
   else{
-    LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll: something wrong\n\r"));
+    LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_poll: something wrong\n"));
   }
- return ret_code;
+  return ret_code;
 }
 /**
  * @brief on closing a connection this function frees any allocated 
@@ -1230,7 +1228,7 @@ err_t mysqlc_poll(void *arg, struct tcp_pcb *pcb)
 static void
 mysqlc_cleanup(struct mysql_connector *s)
 {
-  LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_cleanup()\r\n"));
+  LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_cleanup()\n"));
   if(s->pcb){
     /* try to clean up the pcb if not already deallocated*/
     //mysqlc_close(s);
@@ -1267,7 +1265,7 @@ mysqlc_cleanup(struct mysql_connector *s)
 static u16_t
 mysqlc_close(struct mysql_connector *s)
 {
-  LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_close()\r\n"));
+  LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_close()\n"));
   tcp_arg(s->pcb, NULL);
   tcp_poll(s->pcb,NULL,0);  // may be wrong ?
   tcp_sent(s->pcb, NULL);
@@ -1330,13 +1328,13 @@ err_t mysqlc_send(struct tcp_pcb *pcb,struct mysql_connector* s){
   err_t ret_code = ERR_OK,err = ERR_OK;
   len=s->payload_len - s->payload_sent;
   if(len > tcp_sndbuf(pcb)){
-    LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_send: request length is Larger than max amount%d\n\r",err));
+    LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_send: request length is Larger than max amount%d\n",err));
     len = tcp_sndbuf(pcb);
   }
-  LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_send: TCP write: %d\r\n",len));
+  LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_send: TCP write: %d\n",len));
   err =  tcp_write(pcb, s->payload, len, 0);
   if (err != ERR_OK) {
-    LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_send: error writing! %d\n\r",err));
+    LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_send: error writing! %d\n",err));
     ret_code = err ;
     return ret_code;
   }
@@ -1704,7 +1702,7 @@ mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
             s->es = CONNECTOR_ERROR_CANNOT_CONNECT;
             mysqlc_close(s);
           }else{
-            LWIP_DEBUGF(MYSQLC_DEBUG, ("Connected to server version %s\n\r",s->server_version));
+            LWIP_DEBUGF(MYSQLC_DEBUG, ("Connected to server version %s\n",s->server_version));
             mem_free(s->server_version);
             s->server_version = NULL;
 
@@ -1737,7 +1735,7 @@ mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
             s->connector_state = CONNECTOR_STATE_CONNECTOR_ERROR;
             s->es = CONNECTOR_ERROR_SENDING;
           }else{
-            LWIP_DEBUGF(MYSQLC_DEBUG, ("Received \"Ok packet\" after sending Query \n\r"));
+            LWIP_DEBUGF(MYSQLC_DEBUG, ("Received \"Ok packet\" after sending Query \n"));
 
             // Tell the application the Good news ?
             s->connector_state = CONNECTOR_STATE_IDLE;
@@ -1761,7 +1759,7 @@ mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
      * by the remote server, an error flag CONNECTOR_ERROR_UNEXPECTED_CLOSED_CONNECTION is sent to the application 
      * if the connection is closed while sending data or during negotiation.
      */
-    LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_recv: connection closed by remote host\n\r"));
+    LWIP_DEBUGF(MYSQLC_DEBUG, ("mysqlc_recv: connection closed by remote host\n"));
     if((s->connector_state == CONNECTOR_STATE_CONNECTING  )
         && (s->state == MYSQLC_CONNECTED || s->state == MYSQLC_RECV || s->state == MYSQLC_SENT)){
       s->connector_state  =  CONNECTOR_STATE_CONNECTOR_ERROR ;
@@ -1788,8 +1786,7 @@ mysqlc_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 err_t mysqlc_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
 {
   struct mysql_connector * s = arg;
-  LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_sent:Done Sending to client : %d",len));
-  LWIP_DEBUGF(MYSQLC_DEBUG,("\n\r"));
+  LWIP_DEBUGF(MYSQLC_DEBUG,("mysqlc_sent:Done Sending to client : %d\n",len));
   /* the connector timer for timeout is reset so that the connection will not be closed, not waiting any more*/
   if(s->connector_state == CONNECTOR_STATE_CONNECTING && s->state == MYSQLC_RECV){
     s->timer = MYSQLC_TIMEOUT;

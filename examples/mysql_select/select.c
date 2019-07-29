@@ -107,7 +107,7 @@ void select_periodic_handler(uint32_t time)
         if(ret)
           cs = INIT;/* No connector then recreate it*/
         else if(state != CONNECTOR_STATE_CONNECTING){
-          LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Not Connected\n\r"));
+          LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Not Connected\n"));
           cs = CONNECT;
         }
       }else{
@@ -119,7 +119,7 @@ void select_periodic_handler(uint32_t time)
       if(ret)
         cs = INIT;
       else if(!connected){
-        LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Not Connected\n\r"));
+        LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Not Connected\n"));
         cs =  CONNECT;
         ss = EXECUTE;
       }else{
@@ -135,7 +135,7 @@ void select_periodic_handler(uint32_t time)
                     ret = mysqlc_execute(&sd,read_query);
                     if(!ret){
                       ss = READ;
-                      LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Reading...\n\r"));
+                      LWIP_DEBUGF(LWIP_DBG_ON, ("select_periodic_handler():Reading...\n"));
                     }
                   }
                 }else{
@@ -156,7 +156,7 @@ void select_periodic_handler(uint32_t time)
                   row_values* row = mysqlc_get_next_row(&sd);
                   if (row != NULL) {
                     long value;
-                    LWIP_DEBUGF(LWIP_DBG_ON, ("number of fields is  %d\r\n",columns->num_fields));
+                    LWIP_DEBUGF(LWIP_DBG_ON, ("number of fields is  %d\n",columns->num_fields));
                     for ( int i = 0 ; i < columns->num_fields ; i++){
                       LWIP_DEBUGF(LWIP_DBG_ON, ("%s, ",row->values[i]));
                       //d[i-1] = atol(row->values[i]);

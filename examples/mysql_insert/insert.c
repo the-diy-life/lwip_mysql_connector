@@ -104,7 +104,7 @@ void insert_periodic_handler(u32_t time)
         if(ret)
           cs = INIT;/* No connector then recreate it*/
         else if(state != CONNECTOR_STATE_CONNECTING){
-          LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Not Connected\n\r"));
+          LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Not Connected\n"));
           cs = CONNECT;
         }
       }else{
@@ -116,7 +116,7 @@ void insert_periodic_handler(u32_t time)
       if(ret)
         cs = INIT;
       else if(!connected){
-        LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Not Connected\n\r"));
+        LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Not Connected\n"));
         cs =  CONNECT;
       }else{
         enum state state;
@@ -129,7 +129,7 @@ void insert_periodic_handler(u32_t time)
               ret = mysqlc_execute(&sd,query);
               if(!ret){
                 insert_time = time;
-                LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Inserting...\n\r"));
+                LWIP_DEBUGF(LWIP_DBG_ON, ("insert_periodic_handler():Inserting...\n"));
               }
             }
           }else{
